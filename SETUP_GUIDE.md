@@ -1,233 +1,215 @@
-# Open Connect v1.0.0 - Setup & Migration Guide
+# Open Connect v1.0.0 - Complete Setup Guide
 
 ## Overview
 
 Open Connect is a self-hosted AI interface that supports multiple AI providers including OpenRouter, Hugging Face, Groq, and more.
 
-**Live Deployment**: https://open-connect-production.up.railway.app
+**🌐 Live Deployment**: https://open-connect-production.up.railway.app
 
 ---
 
-## Quick Start
+## 📱 Quick Start - Mobile Installation
 
-### Prerequisites
-- Railway account (for deployment)
-- API keys for at least one AI provider
+Open Connect works as a Progressive Web App (PWA) on mobile devices:
 
-### Required Environment Variables
+### Android
+1. Open https://open-connect-production.up.railway.app in Chrome
+2. Tap the 3-dot menu → "Add to Home Screen"
+3. Tap "Add" to install
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenRouter API key (recommended) | Yes |
-| `OPENAI_API_BASE_URL` | OpenRouter endpoint: `https://openrouter.ai/api/v1` | Yes |
-| `HUGGINGFACE_TOKEN` | Hugging Face API token | Optional |
-| `GROQ_API_KEY` | Groq API key | Optional |
-| `WEBUI_SECRET_KEY` | Secret key for session encryption | Yes |
-| `DATABASE_URL` | PostgreSQL connection string | Optional |
-| `ENV` | Environment: `dev`, `test`, `prod` | Yes |
-| `PORT` | Application port (default: 8080) | Yes |
-| `DOCKER` | Set to `true` for Docker deployment | Yes |
+### iPhone/iPad
+1. Open https://open-connect-production.up.railway.app in Safari
+2. Tap the Share button → "Add to Home Screen"
+3. Name it and tap "Add"
+
+See **MOBILE_GUIDE.md** for detailed instructions.
 
 ---
 
-## AI Providers Configuration
+## 🔑 Authentication
 
-### OpenRouter (Recommended - Free Tier)
+### Admin Account
+- **Name**: Charles Tanauan
+- **Email**: tanauancharles1@gmail.com
+- **Password**: `openpassword`
 
-OpenRouter provides access to many free models including:
-- **google/gemma-3-4b-it**: Free, fast responses
-- **qwen/qwen-2.5-7b-instruct**: Free, good quality
-- **microsoft/phi-4**: Free, reasoning
-- **deepseek/deepseek-r1**: Free, reasoning
-- **anthropic/claude-3.5-haiku**: Free tier available
+⚠️ **Change the admin password immediately after first login!**
 
+### API Authentication
+
+1. Go to **Settings** → **Account** → **API Keys**
+2. Click **"Create API Key"**
+3. Copy your API key
+
+**Usage:**
 ```bash
-OPENAI_API_KEY=sk-oh-xxxxxxxxxxxx
-OPENAI_API_BASE_URL=https://openrouter.ai/api/v1
-```
-
-### Hugging Face (Free Tier)
-
-Access to open-source models through Hugging Face inference endpoints.
-
-```bash
-HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxx
-```
-
-### Groq (Free Tier)
-
-Fast inference with free tier limits:
-- **llama-3.1-8b-instant**: Free
-- **llama-3.2-1b-preview**: Free
-- **mixtral-8x7b-32768**: Free
-
-```bash
-GROQ_API_KEY=gsk_xxxxxxxxxxxx
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+     https://open-connect-production.up.railway.app/api/v1/models
 ```
 
 ---
 
-## Database Configuration
+## 🤖 AI Models (Free Tier)
 
-### SQLite (Default - No Setup Required)
+Open Connect is pre-configured with these free OpenRouter models:
 
-By default, the application uses SQLite for data storage. This is stored at:
-```
-./backend/data/webui.db
-```
-
-### PostgreSQL (Production - Optional)
-
-For production deployments with multiple instances:
-
-```bash
-DATABASE_URL=postgresql://user:password@host:port/database
-```
+| Model | Description | Best For |
+|-------|-------------|----------|
+| `google/gemma-3-4b-it` | Fast, efficient | General chat |
+| `qwen/qwen-2.5-7b-instruct` | Good quality | Coding, analysis |
+| `microsoft/phi-4` | Reasoning | Complex tasks |
+| `deepseek/deepseek-r1` | Deep reasoning | Math, logic |
+| `anthropic/claude-3.5-haiku` | Fast Claude | Quick tasks |
+| `meta/llama-3.1-8b-instruct` | Open-source | General use |
 
 ---
 
-## Backup & Migration
+## ⚙️ Environment Variables
 
-### Creating a Backup
+| Variable | Description | Status |
+|----------|-------------|--------|
+| `OPENAI_API_KEY` | OpenRouter API key | ✅ Configured |
+| `OPENAI_API_BASE_URL` | OpenRouter endpoint | ✅ Configured |
+| `HUGGINGFACE_TOKEN` | Hugging Face token | ✅ Configured |
+| `GROQ_API_KEY` | Groq API key | ✅ Configured |
+| `WEBUI_SECRET_KEY` | Session encryption | ✅ Configured |
+| `DEFAULT_MODELS` | Pre-selected models | ✅ Configured |
+| `ENV` | Environment | ✅ Set to prod |
+| `PORT` | Application port | ✅ Set to 8080 |
+| `DOCKER` | Docker mode | ✅ Enabled |
 
+---
+
+## 💾 Backup & Migration
+
+### Manual Backup
 ```bash
 cd scripts/backup
-chmod +x backup.sh
 ./backup.sh
 ```
 
-This creates a backup at `backups/open-connect_backup_[timestamp].tar.gz` containing:
-- Database (`webui.db`)
-- User uploads
-- Embedding model cache
-- Secret key
-- Environment template
+### Auto-Backup (Railway Cron)
+1. Go to Railway Dashboard → open-connect → Settings → Cron Jobs
+2. Add new cron job:
+   - Command: `/bin/bash /app/scripts/backup/railway-backup.sh`
+   - Schedule: `0 2 * * *` (daily at 2 AM)
 
-### Restoring from Backup
-
+### Restore from Backup
 ```bash
 cd scripts/backup
-chmod +x restore.sh
-./restore.sh backups/open-connect_backup_20240101_120000.tar.gz
+./restore.sh backups/open-connect_backup_TIMESTAMP.tar.gz
 ```
 
-### Manual Migration
-
-1. **Copy database**:
-   ```bash
-   cp ./backend/data/webui.db /path/to/new/location/webui.db
-   ```
-
-2. **Copy secret key**:
-   ```bash
-   cp ./backend/.webui_secret_key /path/to/new/location/.webui_secret_key
-   ```
-
-3. **Copy uploads** (if any):
-   ```bash
-   cp -r ./backend/data/uploads /path/to/new/location/uploads/
-   ```
-
-4. **Set environment variables** on the new server
-
-5. **Restart the application**
+### Backup Contents
+- Database (`webui.db`)
+- User uploads
+- Knowledge base
+- Chat history
+- Secret key
+- Configuration
 
 ---
 
-## Railway Deployment
+## 🔌 API Endpoints
 
-### Environment Variables via GraphQL
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api/v1/models` | GET | List models |
+| `/api/v1/chats` | GET/POST | Chat operations |
+| `/api/v1/configs` | GET | System config |
+| `/api/chat/completions` | POST | Chat completions |
 
-The following variables are configured for the Railway deployment:
+---
 
-```bash
-# AI Providers
-OPENAI_API_KEY=sk-oh-xxxxxxxxxxxx
-OPENAI_API_BASE_URL=https://openrouter.ai/api/v1
-HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxx
-GROQ_API_KEY=gsk_xxxxxxxxxxxx
-
-# App Configuration
-APP_NAME=Open Connect
-ENV=prod
-WEBUI_SECRET_KEY=xxxxxxxxxxxx
-PORT=8080
-DOCKER=true
-```
+## 🚀 Railway Deployment
 
 ### Health Check
+- **Path**: `/health`
+- **Timeout**: 300 seconds (5 minutes)
+- **Status**: ✅ Working
 
-The health check endpoint is configured at `/health` with a 2-minute timeout.
-
----
-
-## Admin Account
-
-The admin account was created during setup:
-
-- **Name**: Charles Tanauan
-- **Email**: tanauancharles1@gmail.com
-- **Password**: openpassword
-
-⚠️ **Security Note**: Change the admin password immediately after first login!
-
----
-
-## API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `/` | Web UI |
-| `/health` | Health check |
-| `/api/v1/` | API v1 |
-| `/api/v1/models` | List models |
-| `/api/v1/chats` | Chat endpoints |
+### Redeploy
+```bash
+# Via Railway GraphQL API
+mutation {
+  serviceInstanceRedeploy(
+    serviceId: "bb211eb9-3ebf-4e4d-84fc-f1e0e4ca5609",
+    environmentId: "266408c3-17b9-4706-907a-3abc4acf1382"
+  )
+}
+```
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
+
+### "Missing Authentication Header"
+**Solution**: Add `Authorization: Bearer YOUR_API_KEY` to your API requests.
 
 ### 502 Bad Gateway
-
-This usually means the application failed to start. Check:
-1. Health check path is correct (`/health`)
-2. All required environment variables are set
-3. Application is listening on the correct port (8080)
+**Causes**:
+1. App still starting up (wait 2-5 minutes)
+2. Health check path incorrect
+3. Missing environment variables
 
 ### Database Connection Errors
+**Solution**: Remove DATABASE_URL to use SQLite (default).
 
-If using PostgreSQL:
-1. Verify the connection string format
-2. Check database credentials
-3. Ensure the database is accessible from the deployment
-
-### Missing API Keys
-
-Some features require API keys:
-- AI model inference requires at least one provider key
-- Embedding models download from Hugging Face
-- Web search features require search API keys
+### API Key Issues
+1. Generate new key from Settings
+2. Check key hasn't expired
+3. Ensure header format is correct
 
 ---
 
-## Security Best Practices
+## 📁 Project Structure
 
-1. **Change default passwords** immediately
-2. **Use environment variables** for secrets, never commit them
-3. **Enable HTTPS** in production (Railway provides this automatically)
-4. **Regular backups** - automate with cron:
-   ```bash
-   0 2 * * * /path/to/backup.sh
-   ```
+```
+open-connect/
+├── backend/
+│   ├── open_webui/       # Main application
+│   │   ├── data/         # SQLite database
+│   │   └── static/       # Frontend assets
+│   ├── requirements.txt  # Python dependencies
+│   └── .webui_secret_key # Session secret
+├── scripts/
+│   └── backup/          # Backup scripts
+│       ├── backup.sh     # Manual backup
+│       ├── restore.sh    # Restore from backup
+│       ├── auto-backup.sh # Auto-backup with retention
+│       └── railway-backup.sh # Railway-specific backup
+├── Dockerfile
+├── SETUP_GUIDE.md       # This file
+├── MOBILE_GUIDE.md       # Mobile installation guide
+└── .github/workflows/    # CI/CD
+```
 
 ---
 
-## Version History
+## 🔒 Security Best Practices
 
-- **v1.0.0** (Current): Initial deployment with OpenRouter, Hugging Face, and Groq support
+1. **Change default admin password** immediately
+2. **Keep API keys secure** - never commit to version control
+3. **Regular backups** - set up automated daily backups
+4. **Monitor logs** - check for unauthorized access
+5. **HTTPS** - Railway provides automatically
 
 ---
 
-## Support
+## 📚 Additional Resources
 
-For issues and feature requests, please open an issue on the GitHub repository.
+- **Mobile Installation**: See `MOBILE_GUIDE.md`
+- **GitHub Repository**: https://github.com/OrgHide/open-connect
+- **Open WebUI Docs**: https://docs.openwebui.com/
+
+---
+
+## ✅ Version History
+
+- **v1.0.0** (Current)
+  - Initial deployment
+  - OpenRouter, Hugging Face, Groq integration
+  - Mobile PWA support
+  - Auto-backup scripts
+  - Comprehensive documentation
