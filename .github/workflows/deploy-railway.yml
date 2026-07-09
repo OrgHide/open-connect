@@ -12,31 +12,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy to Railway
+      - name: Deploy to Railway via GraphQL API
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          PROJECT_ID: b5eaa696-e7d5-4403-be0a-79a485e54537
+          ENVIRONMENT_ID: 266408c3-17b9-4706-907a-3abc4acf1382
+          SERVICE_ID: bb211eb9-3ebf-4e4d-84fc-f1e0e4ca5609
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WEBUI_SECRET_KEY: ${{ secrets.WEBUI_SECRET_KEY }}
         run: |
-          railway up --detach --service open-connect --environment production
-
-      - name: Set Environment Variables
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          railway variables set DATABASE_URL="${{ secrets.DATABASE_URL }}"
-          railway variables set WEBUI_SECRET_KEY="${{ secrets.WEBUI_SECRET_KEY }}"
-          railway variables set ENV="prod"
-          railway variables set PORT="8080"
-          railway variables set DOCKER="true"
-          railway variables set ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
-          railway variables set SERVICE_ROLE_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
-
-      - name: Get deployment URL
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          sleep 10
-          DEPLOYMENT_URL=$(railway domain list --json 2>/dev/null | grep -o '"https://[^"]*"' | head -1 || echo "Deployment pending")
-          echo "Deployment URL: $DEPLOYMENT_URL"
+          # Deploy the service
+          curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -d '{"query": "mutation { serviceInstanceDeploy(serviceId: \"'$SERVICE_ID'\", environmentId: \"'$ENVIRONMENT_ID'\", latestCommit: true) }"}'
+          
+          echo "Deployment triggered successfully"
