@@ -1,55 +1,57 @@
-# Open Connect v1.0.0 - Complete Setup Guide
+# Open Connect - Setup Guide
 
 ## Overview
 
-Open Connect is a self-hosted AI interface that supports multiple AI providers including OpenRouter, Hugging Face, Groq, and more.
-
-**🌐 Live Deployment**: https://open-connect-production.up.railway.app
-
----
-
-## 📱 Quick Start - Mobile Installation
-
-Open Connect works as a Progressive Web App (PWA) on mobile devices:
-
-### Android
-1. Open https://open-connect-production.up.railway.app in Chrome
-2. Tap the 3-dot menu → "Add to Home Screen"
-3. Tap "Add" to install
-
-### iPhone/iPad
-1. Open https://open-connect-production.up.railway.app in Safari
-2. Tap the Share button → "Add to Home Screen"
-3. Name it and tap "Add"
-
-See **MOBILE_GUIDE.md** for detailed instructions.
+Open Connect is a self-hosted AI interface built on Open WebUI, deployed on Railway with the following features:
+- **AI Chat Interface**: Access to multiple free AI models
+- **Knowledge Base**: RAG (Retrieval-Augmented Generation) support with Qdrant vector database
+- **Code Execution**: Run Python code directly in chat
+- **Web Search**: Search the web from within the chat interface
+- **Mobile PWA**: Install as an app on Android and iOS
 
 ---
 
-## 🔑 Authentication
+## Quick Access
 
-### Admin Account
-- **Name**: Charles Tanauan
-- **Email**: tanauancharles1@gmail.com
-- **Password**: `openpassword`
-
-⚠️ **Change the admin password immediately after first login!**
-
-### API Authentication
-
-1. Go to **Settings** → **Account** → **API Keys**
-2. Click **"Create API Key"**
-3. Copy your API key
-
-**Usage:**
-```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-     https://open-connect-production.up.railway.app/api/v1/models
-```
+**Live URL**: https://open-connect-production.up.railway.app
 
 ---
 
-## 🤖 AI Models (Free Tier)
+## Authentication
+
+| Setting | Value |
+|---------|-------|
+| Auth Enabled | Yes |
+| Signups | Enabled |
+| JWT Expiration | 4 weeks |
+
+### Default Admin User
+- **Username**: charles
+- **Password**: (as configured)
+
+---
+
+## Features Enabled
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Web Search | Enabled | Search the web from chat |
+| Code Execution | Enabled | Run Python code in chat |
+| Code Interpreter | Enabled | Advanced code execution with pyodide |
+| Memories | Enabled | Persistent user memories |
+| Notes | Enabled | Take notes |
+| Automations | Enabled | Workflow automations |
+| Message Rating | Enabled | Rate AI responses |
+| API Keys | Enabled | Generate API keys for external use |
+| User Signups | Enabled | Allow new user registrations |
+| Hybrid Search | Enabled | Combined vector + keyword search |
+| Direct Connections | Enabled | Connect to external model APIs |
+| Model Caching | Enabled | Cache model lists |
+| Speech-to-Text | Enabled | Whisper for voice input |
+
+---
+
+## AI Models (Free Tier)
 
 Open Connect is pre-configured with these free OpenRouter models:
 
@@ -64,191 +66,101 @@ Open Connect is pre-configured with these free OpenRouter models:
 
 ---
 
-## ✨ Features Enabled
-
-| Feature | Status | Description |
-|---------|--------|-------------|
-| Web Search | ✅ | Search the web from chat |
-| Code Execution | ✅ | Run Python code in chat |
-| Code Interpreter | ✅ | Advanced code execution with pyodide |
-| Memories | ✅ | Persistent user memories |
-| Notes | ✅ | Take notes |
-| Automations | ✅ | Workflow automations |
-| Message Rating | ✅ | Rate AI responses |
-| API Keys | ✅ | Generate API keys for external use |
-| User Signups | ✅ | Allow new user registrations |
-| Hybrid Search | ✅ | Combined vector + keyword search |
-| Direct Connections | ✅ | Connect to external model APIs |
-| Model Caching | ✅ | Cache model lists |
-| Speech-to-Text | ✅ | Whisper for voice input |
-
----
-
-## ⚙️ Environment Variables
+## Environment Variables
 
 | Variable | Description | Status |
 |----------|-------------|--------|
-| `OPENAI_API_KEY` | OpenRouter API key | ✅ Configured |
-| `OPENAI_API_BASE_URL` | OpenRouter endpoint | ✅ Configured |
-| `HUGGINGFACE_TOKEN` | Hugging Face token | ✅ Configured |
-| `GROQ_API_KEY` | Groq API key | ✅ Configured |
-| `WEBUI_SECRET_KEY` | Session encryption | ✅ Configured |
-| `DEFAULT_MODELS` | Pre-selected models | ✅ Configured |
-| `ENV` | Environment | ✅ Set to prod |
-| `PORT` | Application port | ✅ Set to 8080 |
-| `DOCKER` | Docker mode | ✅ Enabled |
-| `DATABASE_URL` | Supabase PostgreSQL | ✅ Configured |
-| `SUPABASE_URL` | Supabase project URL | ✅ Configured |
-| `SUPABASE_ANON_KEY` | Supabase anon key | ✅ Configured |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role | ✅ Configured |
-| `QDRANT_URL` | Qdrant vector DB URL | ✅ Configured |
-| `QDRANT_API_KEY` | Qdrant API key | ✅ Configured |
+| `OPENAI_API_KEY` | OpenRouter API key | Configured |
+| `OPENAI_API_BASE_URL` | OpenRouter endpoint | Configured |
+| `HUGGINGFACE_TOKEN` | Hugging Face token | Configured |
+| `GROQ_API_KEY` | Groq API key | Configured |
+| `WEBUI_SECRET_KEY` | Session encryption | Configured |
+| `DEFAULT_MODELS` | Pre-selected models | Configured |
+| `ENV` | Environment | Set to prod |
+| `PORT` | Application port | Set to 8080 |
+| `DOCKER` | Docker mode | Enabled |
+| `SUPABASE_URL` | Supabase project URL | Configured |
+| `SUPABASE_ANON_KEY` | Supabase anon key | Configured |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role | Configured |
+| `QDRANT_URL` | Qdrant vector DB URL | Configured |
+| `QDRANT_API_KEY` | Qdrant API key | Configured |
 
 ### Database & Vector Store
 
-**Supabase PostgreSQL** - Used for:
+**SQLite** (Default) - Used for:
 - User data storage
 - Chat history
 - Application metadata
-- Knowledge base documents
 
 **Qdrant Vector Database** - Used for:
 - Semantic search embeddings
 - Knowledge base vector storage
 - Retrieval-augmented generation (RAG)
 
+**Supabase** (Optional) - Can be configured via admin panel:
+- External knowledge base sources
+- Additional data storage
+
 ---
 
-## 💾 Backup & Migration
+## Backup & Migration
+
+### Automated Backup
+Backup scripts are available in `scripts/backup/`:
+- `auto-backup.sh` - Universal backup script
+- `railway-backup.sh` - Railway-specific backup with environment variable support
 
 ### Manual Backup
 ```bash
-cd scripts/backup
-./backup.sh
-```
+# Backup SQLite database
+sqlite3 data/webui.db ".backup 'backup.db'"
 
-### Auto-Backup (Railway Cron)
-1. Go to Railway Dashboard → open-connect → Settings → Cron Jobs
-2. Add new cron job:
-   - Command: `/bin/bash /app/scripts/backup/railway-backup.sh`
-   - Schedule: `0 2 * * *` (daily at 2 AM)
+# Backup uploaded files
+tar -czf uploads.tar.gz backend/open_webui/static/uploads/
+```
 
 ### Restore from Backup
 ```bash
-cd scripts/backup
-./restore.sh backups/open-connect_backup_TIMESTAMP.tar.gz
-```
+# Restore database
+sqlite3 data/webui.db ".restore 'backup.db'"
 
-### Backup Contents
-- Database (`webui.db`)
-- User uploads
-- Knowledge base
-- Chat history
-- Secret key
-- Configuration
-
----
-
-## 🔌 API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/v1/models` | GET | List models |
-| `/api/v1/chats` | GET/POST | Chat operations |
-| `/api/v1/configs` | GET | System config |
-| `/api/chat/completions` | POST | Chat completions |
-
----
-
-## 🚀 Railway Deployment
-
-### Health Check
-- **Path**: `/health`
-- **Timeout**: 300 seconds (5 minutes)
-- **Status**: ✅ Working
-
-### Redeploy
-```bash
-# Via Railway GraphQL API
-mutation {
-  serviceInstanceRedeploy(
-    serviceId: "bb211eb9-3ebf-4e4d-84fc-f1e0e4ca5609",
-    environmentId: "266408c3-17b9-4706-907a-3abc4acf1382"
-  )
-}
+# Restore uploads
+tar -xzf uploads.tar.gz
 ```
 
 ---
 
-## 🔧 Troubleshooting
+## Mobile Installation
 
-### "Missing Authentication Header"
-**Solution**: Add `Authorization: Bearer YOUR_API_KEY` to your API requests.
+See [MOBILE_GUIDE.md](./MOBILE_GUIDE.md) for detailed installation instructions for Android and iOS.
 
-### 502 Bad Gateway
-**Causes**:
-1. App still starting up (wait 2-5 minutes)
-2. Health check path incorrect
-3. Missing environment variables
-
-### Database Connection Errors
-**Solution**: Remove DATABASE_URL to use SQLite (default).
-
-### API Key Issues
-1. Generate new key from Settings
-2. Check key hasn't expired
-3. Ensure header format is correct
+### Quick Install
+1. Open https://open-connect-production.up.railway.app in mobile browser
+2. Tap "Add to Home Screen" / "Install App"
+3. The app will appear as a native-like application
 
 ---
 
-## 📁 Project Structure
+## Troubleshooting
 
-```
-open-connect/
-├── backend/
-│   ├── open_webui/       # Main application
-│   │   ├── data/         # SQLite database
-│   │   └── static/       # Frontend assets
-│   ├── requirements.txt  # Python dependencies
-│   └── .webui_secret_key # Session secret
-├── scripts/
-│   └── backup/          # Backup scripts
-│       ├── backup.sh     # Manual backup
-│       ├── restore.sh    # Restore from backup
-│       ├── auto-backup.sh # Auto-backup with retention
-│       └── railway-backup.sh # Railway-specific backup
-├── Dockerfile
-├── SETUP_GUIDE.md       # This file
-├── MOBILE_GUIDE.md       # Mobile installation guide
-└── .github/workflows/    # CI/CD
-```
+### Health Check Failures
+If deployment fails with health check errors:
+1. Check health endpoint: `https://open-connect-production.up.railway.app/health`
+2. Increase timeout if needed (current: 300s)
+
+### Model Connection Issues
+1. Verify API keys are set correctly in Railway dashboard
+2. Check OpenRouter quota at https://openrouter.ai/account
+3. Review logs in Railway dashboard
+
+### Knowledge Base Not Working
+1. Verify Qdrant credentials in Railway dashboard
+2. Check Qdrant cloud status
+3. Ensure hybrid search is enabled
 
 ---
 
-## 🔒 Security Best Practices
+## Support
 
-1. **Change default admin password** immediately
-2. **Keep API keys secure** - never commit to version control
-3. **Regular backups** - set up automated daily backups
-4. **Monitor logs** - check for unauthorized access
-5. **HTTPS** - Railway provides automatically
-
----
-
-## 📚 Additional Resources
-
-- **Mobile Installation**: See `MOBILE_GUIDE.md`
-- **GitHub Repository**: https://github.com/OrgHide/open-connect
-- **Open WebUI Docs**: https://docs.openwebui.com/
-
----
-
-## ✅ Version History
-
-- **v1.0.0** (Current)
-  - Initial deployment
-  - OpenRouter, Hugging Face, Groq integration
-  - Mobile PWA support
-  - Auto-backup scripts
-  - Comprehensive documentation
+- **GitHub**: https://github.com/OrgHide/open-connect
+- **Documentation**: https://docs.openwebui.com/
