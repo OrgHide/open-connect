@@ -1,0 +1,231 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+concurrency:
+  group: railway-deploy
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  pre-deployment:
+    name: Pre-Deployment Checks
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check-changes.outputs.should_deploy }}
+      deployment_id: ${{ steps.create-deployment.outputs.deployment_id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for relevant changes
+        id: check-changes
+        run: |
+          # Check if this is a tagged release or main branch push
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || \
+             [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "skipping deployment - not on main or tag"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment record
+        id: create-deployment
+        if: steps.check-changes.outputs.should_deploy == 'true'
+        run: |
+          DEPLOYMENT_ID="deploy-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:8}"
+          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo "📦 Deployment ID: $DEPLOYMENT_ID"
+
+  backup-before-deploy:
+    name: Backup Before Deployment
+    runs-on: ubuntu-latest
+    needs: pre-deployment
+    if: needs.pre-deployment.outputs.should_deploy == 'true'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run pre-deployment backup
+        run: |
+          chmod +x scripts/backup/railway-backup.sh
+          ./scripts/backup/railway-backup.sh
+        env:
+          SUPABASE_BACKUP_ENABLED: 'true'
+          BACKUP_RETENTION_DAYS: 14
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-deployment-backup
+          path: /tmp/backups/*.tar.gz
+          retention-days: 7
+
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [pre-deployment, backup-before-deploy]
+    if: needs.pre-deployment.outputs.should_deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_HASH=${{ github.sha }}
+            BUILD_VERSION=${{ github.ref_name }}
+
+  deploy-railway:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Railway
+        run: |
+          # Install Railway CLI
+          curl -fsSL https://railway.app/install.sh | sh
+          export PATH="$HOME/.railway/bin:$PATH"
+          
+          # Login to Railway
+          railway login --token "$RAILWAY_TOKEN"
+          
+          # Get project info
+          railway project --json | jq .
+          
+          # Set the new image
+          railway variables set DOCKER_IMAGE="$IMAGE_TAG"
+          
+          # Trigger deployment
+          railway up --service open-connect --detach
+          
+          # Wait for deployment
+          railway status
+
+      - name: Wait for health check
+        run: |
+          echo "Waiting for deployment to become healthy..."
+          sleep 30
+          
+          # Check Railway deployment status
+          export PATH="$HOME/.railway/bin:$PATH"
+          railway status --wait || true
+          
+          # Verify endpoint
+          for i in {1..10}; do
+            if curl -sf ${{ vars.RAILWAY_APP_URL || 'https://open-connect-production.up.railway.app' }}/health; then
+              echo "✅ Deployment is healthy!"
+              exit 0
+            fi
+            echo "⏳ Waiting for health check... ($i/10)"
+            sleep 15
+          done
+          
+          echo "⚠️ Health check did not pass, but deployment may still be starting"
+
+  post-deployment:
+    name: Post-Deployment Verification
+    runs-on: ubuntu-latest
+    needs: deploy-railway
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run smoke tests
+        run: |
+          APP_URL="${{ vars.RAILWAY_APP_URL || 'https://open-connect-production.up.railway.app' }}"
+          
+          echo "🔍 Running smoke tests against $APP_URL"
+          
+          # Test health endpoint
+          if curl -sf "$APP_URL/health"; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            exit 1
+          fi
+          
+          # Test readiness endpoint
+          if curl -sf "$APP_URL/ready"; then
+            echo "✅ Readiness check passed"
+          else
+            echo "⚠️ Readiness check returned non-200 (may still be starting)"
+          fi
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          STATUS="✅ Success"
+          if [[ "${{ needs.deploy-railway.result }}" == "failure" ]]; then
+            STATUS="❌ Failed"
+          elif [[ "${{ needs.deploy-railway.result }}" == "cancelled" ]]; then
+            STATUS="⚠️ Cancelled"
+          fi
+          
+          echo "📊 Deployment $STATUS"
+          echo "Commit: ${{ github.sha }}"
+          echo "Ref: ${{ github.ref_name }}"
+          echo "Actor: ${{ github.actor }}"

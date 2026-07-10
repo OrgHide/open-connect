@@ -1,0 +1,140 @@
+{
+  "version": "1.0",
+  "models": [
+    {
+      "id": "google/gemma-3-4b-it",
+      "name": "Google Gemma 3 4B",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": true,
+      "description": "Fast, efficient instruction-tuned model from Google",
+      "context_length": 8192,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    },
+    {
+      "id": "qwen/qwen-2.5-7b-instruct",
+      "name": "Qwen 2.5 7B Instruct",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": true,
+      "description": "Alibaba's Qwen 2.5 7B instruction tuned model",
+      "context_length": 32768,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    },
+    {
+      "id": "microsoft/phi-4",
+      "name": "Microsoft Phi-4",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": true,
+      "description": "Microsoft's Phi-4 small language model",
+      "context_length": 16384,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    },
+    {
+      "id": "deepseek/deepseek-r1",
+      "name": "DeepSeek R1",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": true,
+      "description": "DeepSeek's reasoning model with Chain of Thought",
+      "context_length": 16384,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    },
+    {
+      "id": "anthropic/claude-3.5-haiku",
+      "name": "Claude 3.5 Haiku",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": true,
+      "description": "Anthropic's fast and efficient Claude model",
+      "context_length": 200000,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    },
+    {
+      "id": "meta/llama-3.1-8b-instruct",
+      "name": "Meta Llama 3.1 8B Instruct",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": true,
+      "description": "Meta's open-source Llama 3.1 8B instruction model",
+      "context_length": 32768,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    },
+    {
+      "id": "mistralai/mistral-nemo-12b-instruct-2407",
+      "name": "Mistral Nemo 12B",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "default": false,
+      "description": "Mistral's 12B open-weights model",
+      "context_length": 128000,
+      "supports_functions": true,
+      "supports_vision": false,
+      "category": "free"
+    }
+  ],
+  "providers": {
+    "openrouter": {
+      "name": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "website": "https://openrouter.ai",
+      "description": "Aggregates multiple AI providers with unified API",
+      "free_tier": true,
+      "requires_api_key": true
+    },
+    "ollama": {
+      "name": "Ollama",
+      "base_url": "http://localhost:11434",
+      "website": "https://ollama.ai",
+      "description": "Run AI models locally on your machine",
+      "free_tier": true,
+      "requires_api_key": false
+    },
+    "groq": {
+      "name": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "website": "https://console.groq.com",
+      "description": "Fast inference with free tier",
+      "free_tier": true,
+      "requires_api_key": true
+    }
+  },
+  "rotation_config": {
+    "enabled": true,
+    "strategy": "failover",
+    "fallback_order": [
+      "google/gemma-3-4b-it",
+      "qwen/qwen-2.5-7b-instruct",
+      "mistralai/mistral-nemo-12b-instruct-2407"
+    ],
+    "health_check_interval": 300,
+    "auto_enable": true
+  }
+}

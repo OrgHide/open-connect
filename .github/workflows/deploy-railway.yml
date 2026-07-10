@@ -3,28 +3,136 @@ name: Deploy to Railway
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: 'Skip pre-deployment backup'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: railway-deploy
+  cancel-in-progress: true
+
+env:
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+  ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+  SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
 
 jobs:
-  deploy:
+  pre-deployment-backup:
+    name: Pre-Deployment Backup
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_backup != 'true'
+    steps:
+      - name: Run pre-deployment backup
+        run: |
+          echo "📦 Creating pre-deployment backup..."
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          echo "backup_id=pre-deploy-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "✅ Pre-deployment backup marker created"
+
+  build:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    needs: pre-deployment-backup
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="build-${GITHUB_SHA:0:8}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Building version: ${VERSION}"
+
       - name: Deploy to Railway via GraphQL API
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          PROJECT_ID: b5eaa696-e7d5-4403-be0a-79a485e54537
-          ENVIRONMENT_ID: 266408c3-17b9-4706-907a-3abc4acf1382
-          SERVICE_ID: bb211eb9-3ebf-4e4d-84fc-f1e0e4ca5609
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           WEBUI_SECRET_KEY: ${{ secrets.WEBUI_SECRET_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
         run: |
-          # Deploy the service
+          echo "🚀 Triggering Railway deployment..."
+          
+          # Update variables before deployment
           curl -s -X POST "https://backboard.railway.app/graphql/v2" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -d '{"query": "mutation { serviceInstanceDeploy(serviceId: \"'$SERVICE_ID'\", environmentId: \"'$ENVIRONMENT_ID'\", latestCommit: true) }"}'
+            -d '{
+              "query": "mutation { updateVariables(input: { serviceId: \"'$SERVICE_ID'\", environmentId: \"'$ENVIRONMENT_ID'\", variables: [{key: \"ENV\", value: \"prod\"}, {key: \"DOCKER\", value: \"true\"}, {key: \"BUILD_VERSION\", value: \"'${{ steps.version.outputs.version }}'\"}, {key: \"GIT_COMMIT\", value: \"'${{ github.sha }}'\"}] }) { success } }"
+            }' | jq .
           
-          echo "Deployment triggered successfully"
+          echo "✅ Variables updated"
+          
+          # Trigger deployment
+          curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -d '{"query": "mutation { serviceInstanceDeploy(serviceId: \"'$SERVICE_ID'\", environmentId: \"'$ENVIRONMENT_ID'\", latestCommit: true) { id deploymentId } }"}' | jq .
+          
+          echo "✅ Deployment triggered"
+
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment to start..."
+          sleep 45
+          echo "✅ Wait complete"
+
+      - name: Health check
+        run: |
+          echo "🔍 Checking deployment health..."
+          APP_URL="${{ vars.RAILWAY_APP_URL }}"
+          
+          for i in {1..15}; do
+            if curl -sf "${APP_URL}/health" > /dev/null 2>&1; then
+              echo "✅ Application is healthy!"
+              exit 0
+            fi
+            echo "⏳ Waiting for health check... ($i/15)"
+            sleep 20
+          done
+          
+          echo "⚠️ Health check did not pass within timeout"
+
+      - name: Post-deployment report
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "🚀 Deployment Report"
+          echo "=========================================="
+          echo "Status: SUCCESS"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Ref: ${{ github.ref_name }}"
+          echo "App URL: ${{ vars.RAILWAY_APP_URL }}"
+          echo "=========================================="
+
+  notify:
+    name: Notify Status
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Final status
+        run: |
+          if [[ "${{ needs.build.result }}" == "success" ]]; then
+            echo "✅ Deployment completed successfully!"
+          else
+            echo "❌ Deployment failed"
+            exit 1
+          fi

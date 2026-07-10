@@ -2,15 +2,50 @@
 template = "dockerfile"
 builder = "dockerfile"
 
+[build]
+# Use the Railway-optimized Dockerfile with pre-installed plugins
+dockerfilePath = "Dockerfile.railway"
+
 [deploy]
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-startCommand = "bash start.sh"
-
-[build]
-dockerfilePath = "Dockerfile"
+# Use Railway-optimized startup script
+startCommand = "bash /app/backend/railway-start.sh"
 
 [settings]
 private = false
+
+# Health monitoring configuration
+[railway.healthcheck]
+enabled = true
+path = "/health"
+interval = 30
+timeout = 10
+retries = 5
+
+# Resource configuration for stability
+[railway.resources]
+cpu = "1"
+memory = "2Gi"
+
+# Cron jobs for scheduled tasks
+[railway.cron]
+enabled = true
+timezone = "UTC"
+
+# Environment variables (will be overridden by GitHub Actions)
+[railway.variables]
+ENV = "prod"
+DOCKER = "true"
+PORT = "8080"
+UVICORN_WORKERS = "1"
+LOG_LEVEL = "info"
+ENABLE_BACKUP_RESTORE_ON_STARTUP = "true"
+
+# Data persistence
+[railway.persistentDisk]
+enabled = true
+mountPath = "/app/backend/data"
+sizeGb = 2

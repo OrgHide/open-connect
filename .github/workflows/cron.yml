@@ -1,0 +1,340 @@
+name: Scheduled Maintenance Tasks
+
+on:
+  schedule:
+    # Backup every 6 hours
+    - cron: '0 */6 * * *'
+    # Database maintenance weekly (Sunday 2 AM)
+    - cron: '0 2 * * 0'
+    # Health check every 15 minutes
+    - cron: '*/15 * * * *'
+    # Cleanup old artifacts (daily at 3 AM)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run manually'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - backup
+          - health-check
+          - cleanup
+          - db-maintenance
+          - sync-models
+
+env:
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+jobs:
+  # ── Scheduled Backup ─────────────────────────────────────────────────────────
+  backup:
+    name: Scheduled Backup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'backup'
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      backup_status: ${{ steps.backup.outputs.status }}
+      backup_file: ${{ steps.backup.outputs.backup_file }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create backup
+        id: backup
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_NAME="open-connect-backup-${TIMESTAMP}"
+          BACKUP_DIR="/tmp/open-connect-backups/${BACKUP_NAME}"
+          mkdir -p "${BACKUP_DIR}"
+          
+          echo "📦 Creating scheduled backup at ${TIMESTAMP}"
+          
+          # Backup database
+          if [ -f "backend/data/webui.db" ]; then
+            cp backend/data/webui.db "${BACKUP_DIR}/webui.db"
+            md5sum "${BACKUP_DIR}/webui.db" > "${BACKUP_DIR}/webui.db.md5"
+            echo "✅ Database backed up"
+          fi
+          
+          # Backup uploads
+          if [ -d "backend/data/uploads" ]; then
+            tar -czf "${BACKUP_DIR}/uploads.tar.gz" -C backend/data uploads
+            echo "✅ Uploads backed up"
+          fi
+          
+          # Backup knowledge
+          if [ -d "backend/data/knowledge" ]; then
+            tar -czf "${BACKUP_DIR}/knowledge.tar.gz" -C backend/data knowledge
+            echo "✅ Knowledge base backed up"
+          fi
+          
+          # Create metadata
+          cat > "${BACKUP_DIR}/metadata.json" << EOF
+          {
+            "type": "scheduled_backup",
+            "timestamp": "${TIMESTAMP}",
+            "commit": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}"
+          }
+          EOF
+          
+          # Create archive
+          cd /tmp/open-connect-backups
+          tar -czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}"
+          rm -rf "${BACKUP_NAME}"
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "backup_file=${BACKUP_NAME}.tar.gz" >> $GITHUB_OUTPUT
+          echo "✅ Backup completed: ${BACKUP_NAME}.tar.gz"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-backup-${{ steps.backup.outputs.backup_file }}
+          path: /tmp/open-connect-backups/${{ steps.backup.outputs.backup_file }}
+          retention-days: 14
+
+      - name: Upload to Supabase
+        if: env.SUPABASE_PROJECT_REF != ''
+        run: |
+          echo "📤 Uploading to Supabase Storage..."
+          # Implementation would use Supabase Storage API
+
+      - name: Cleanup old local backups
+        run: |
+          find /tmp/open-connect-backups -name "*.tar.gz" -mtime +14 -delete 2>/dev/null || true
+          echo "🧹 Old backups cleaned up (14 day retention)"
+
+  # ── Health Check ─────────────────────────────────────────────────────────────
+  health-check:
+    name: Health Check Monitor
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'health-check'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run health check
+        run: |
+          APP_URL="${{ vars.RAILWAY_APP_URL || 'https://open-connect-production.up.railway.app' }}"
+          
+          echo "🔍 Running health check against ${APP_URL}"
+          
+          # Check health endpoint
+          HEALTH_RESPONSE=$(curl -sf --max-time 30 "${APP_URL}/health" || echo '{"status": false}')
+          echo "Health Response: ${HEALTH_RESPONSE}"
+          
+          if echo "${HEALTH_RESPONSE}" | grep -q '"status":true'; then
+            echo "✅ Health check passed"
+            echo "status=healthy" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Health check failed"
+            echo "status=unhealthy" >> $GITHUB_OUTPUT
+            
+            # Check if we should create an incident
+            echo "🚨 Creating incident report..."
+            
+            # Create issue for manual review
+            gh issue create \
+              --title "Health Check Failed - $(date +%Y-%m-%d)" \
+              --body "Health check against ${APP_URL} failed at $(date). Please investigate." \
+              --label "incident,automated" \
+              --repo ${{ github.repository }} 2>/dev/null || true
+          fi
+          
+          # Check readiness
+          READY_RESPONSE=$(curl -sf --max-time 30 "${APP_URL}/ready" || echo '{"status": false}')
+          echo "Ready Response: ${READY_RESPONSE}"
+
+      - name: Database health check
+        run: |
+          APP_URL="${{ vars.RAILWAY_APP_URL || 'https://open-connect-production.up.railway.app' }}"
+          
+          DB_RESPONSE=$(curl -sf --max-time 30 "${APP_URL}/health/db" || echo '{"status": false}')
+          echo "Database Health: ${DB_RESPONSE}"
+          
+          if echo "${DB_RESPONSE}" | grep -q '"status":true'; then
+            echo "✅ Database is healthy"
+          else
+            echo "⚠️ Database health check failed or endpoint not available"
+          fi
+
+  # ── Database Maintenance ──────────────────────────────────────────────────────
+  db-maintenance:
+    name: Database Maintenance
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'db-maintenance'
+    environment: maintenance
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run database maintenance
+        run: |
+          echo "🗄️ Starting database maintenance..."
+          
+          # Install dependencies
+          pip install sqlalchemy alembic psycopg2-binary 2>/dev/null || true
+          
+          # Analyze tables (for PostgreSQL)
+          echo "📊 Running ANALYZE on database tables..."
+          
+          # Note: This requires DATABASE_URL environment variable
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            python3 << 'PYTHON'
+            import os
+            from sqlalchemy import create_engine, text
+            
+            try:
+                engine = create_engine(os.environ['DATABASE_URL'])
+                with engine.connect() as conn:
+                    # Analyze all tables
+                    conn.execute(text("ANALYZE"))
+                    print("✅ Database analysis completed")
+                    
+                    # Get table stats
+                    result = conn.execute(text("""
+                        SELECT schemaname, tablename, n_live_tup, n_dead_tup
+                        FROM pg_stat_user_tables
+                        ORDER BY n_dead_tup DESC
+                        LIMIT 10
+                    """))
+                    
+                    print("\n📈 Table Statistics:")
+                    for row in result:
+                        print(f"  {row[1]}: {row[2]} live, {row[3]} dead tuples")
+                        
+            except Exception as e:
+                print(f"⚠️ Maintenance error: {e}")
+            finally:
+                engine.dispose()
+            PYTHON
+          else
+            echo "⚠️ DATABASE_URL not set, skipping database maintenance"
+          fi
+
+      - name: Check for orphaned data
+        run: |
+          echo "🔍 Checking for orphaned data..."
+          
+          # Check for orphaned files
+          if [ -d "backend/data/uploads" ]; then
+            UPLOAD_COUNT=$(find backend/data/uploads -type f | wc -l)
+            echo "📁 Upload files: ${UPLOAD_COUNT}"
+          fi
+          
+          # Check database size
+          if [ -f "backend/data/webui.db" ]; then
+            DB_SIZE=$(du -h backend/data/webui.db | cut -f1)
+            echo "💾 Database size: ${DB_SIZE}"
+          fi
+
+  # ── Model Synchronization ────────────────────────────────────────────────────
+  sync-models:
+    name: Sync Model List
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'sync-models'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sync available models
+        run: |
+          echo "🔄 Syncing available models..."
+          
+          # This would typically call the API to refresh model list
+          # For now, just log the action
+          
+          APP_URL="${{ vars.RAILWAY_APP_URL || 'https://open-connect-production.up.railway.app' }}"
+          
+          echo "📡 Fetching available models from ${APP_URL}/api/v1/models"
+          
+          MODELS_RESPONSE=$(curl -sf --max-time 30 "${APP_URL}/api/v1/models" || echo '[]')
+          MODEL_COUNT=$(echo "${MODELS_RESPONSE}" | jq 'length' 2>/dev/null || echo '0')
+          
+          echo "✅ Found ${MODEL_COUNT} available models"
+
+  # ── Cleanup Old Artifacts ─────────────────────────────────────────────────────
+  cleanup:
+    name: Cleanup Old Artifacts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'cleanup'
+    steps:
+      - name: Cleanup old workflow runs
+        run: |
+          echo "🧹 Cleaning up old workflow runs..."
+          
+          # Delete workflow runs older than 30 days
+          gh run list --created 'before::30 days ago' --json id --jq '.[].id' | \
+            xargs -r gh run delete --yes 2>/dev/null || true
+          
+          echo "✅ Old workflow runs cleaned up"
+
+      - name: Cleanup old artifacts
+        run: |
+          echo "🧹 Cleaning up old artifacts..."
+          
+          # List artifacts to be deleted
+          OLD_ARTIFACTS=$(gh api repos/{owner}/{repo}/actions/artifacts \
+            --jq '.artifacts[] | select(.created_at < "30 days ago") | .id' 2>/dev/null || echo "")
+          
+          if [ -n "$OLD_ARTIFACTS" ]; then
+            echo "$OLD_ARTIFACTS" | xargs -r gh api -X DELETE repos/{owner}/{repo}/actions/artifacts/ 2>/dev/null || true
+            echo "✅ Old artifacts deleted"
+          else
+            echo "✅ No old artifacts to clean up"
+          fi
+
+      - name: Cleanup old issues
+        run: |
+          echo "🧹 Checking for stale issues..."
+          
+          # Close issues older than 90 days with no activity
+          # This is informational only - manual review recommended
+          echo "📋 Issues older than 90 days with no recent comments:"
+          # gh issue list --state open --created 'before::90 days ago' --json number,title
+
+  # ── Summary Report ───────────────────────────────────────────────────────────
+  summary:
+    name: Daily Summary Report
+    runs-on: ubuntu-latest
+    needs: [backup, health-check, db-maintenance]
+    if: always() && github.event_name == 'schedule'
+    steps:
+      - name: Generate summary
+        run: |
+          echo "============================================"
+          echo "Open Connect - Scheduled Tasks Summary"
+          echo "============================================"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo ""
+          
+          echo "📊 Task Results:"
+          echo "  Backup: ${{ needs.backup.result }}"
+          echo "  Health Check: ${{ needs.health-check.result }}"
+          echo "  DB Maintenance: ${{ needs.db-maintenance.result }}"
+          echo ""
+          
+          echo "Next scheduled run: See workflow schedule"
+          echo "============================================"
+          
+          # Post summary as workflow run summary
+          echo "## Open Connect Maintenance Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Task | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backup | ${{ needs.backup.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health Check | ${{ needs.health-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| DB Maintenance | ${{ needs.db-maintenance.result }} |" >> $GITHUB_STEP_SUMMARY

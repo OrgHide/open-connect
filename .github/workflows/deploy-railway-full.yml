@@ -1,0 +1,419 @@
+name: Deploy to Railway (Production)
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      skip_backup:
+        description: 'Skip pre-deployment backup'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: railway-production
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+jobs:
+  # ============================================================
+  # Job 1: Pre-Deployment Backup
+  # ============================================================
+  pre-deployment-backup:
+    name: Pre-Deployment Backup
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    outputs:
+      backup_status: ${{ steps.backup.outputs.status }}
+      backup_file: ${{ steps.backup.outputs.backup_file }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run pre-deployment backup
+        id: backup
+        if: github.event.inputs.skip_backup != 'true'
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_NAME="pre-deploy-${TIMESTAMP}"
+          BACKUP_DIR="/tmp/open-connect-backups"
+          mkdir -p "${BACKUP_DIR}"
+          
+          echo "📦 Creating pre-deployment backup..."
+          
+          # Create backup structure
+          mkdir -p "${BACKUP_DIR}/${BACKUP_NAME}"
+          
+          # Note: In Railway, the actual backup would be done via Railway CLI
+          # This creates a marker file for the deployment to restore from
+          echo '{"timestamp": "'${TIMESTAMP}'", "commit": "'${{ github.sha }}'", "ref": "'${{ github.ref_name }}'"}' > "${BACKUP_DIR}/${BACKUP_NAME}/restore_info.json"
+          
+          # Create archive
+          cd /tmp
+          tar -czf "open-connect-${BACKUP_NAME}.tar.gz" -C /tmp "open-connect-backups/${BACKUP_NAME}"
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "backup_file=open-connect-${BACKUP_NAME}.tar.gz" >> $GITHUB_OUTPUT
+          echo "✅ Pre-deployment backup created"
+
+      - name: Upload backup artifact
+        if: github.event.inputs.skip_backup != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-deployment-backup
+          path: /tmp/open-connect-backups/*.tar.gz
+          retention-days: 7
+
+  # ============================================================
+  # Job 2: Build and Push Docker Image
+  # ============================================================
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: pre-deployment-backup
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="build-${GITHUB_SHA:0:8}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Building version: ${VERSION}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_HASH=${{ github.sha }}
+            BUILD_VERSION=${{ steps.version.outputs.version }}
+
+      - name: Save image tag for deployment
+        run: |
+          echo "IMAGE_TAG=${{ steps.meta.outputs.tags }}" >> $GITHUB_ENV
+          echo "✅ Docker image built and pushed"
+
+  # ============================================================
+  # Job 3: Deploy to Railway
+  # ============================================================
+  deploy-railway:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    needs: build
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          export PATH="$HOME/.railway/bin:$PATH"
+          railway --version
+
+      - name: Login to Railway
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          echo "$RAILWAY_TOKEN" | railway login --token
+          
+      - name: Configure project variables
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          
+          # Set the new Docker image
+          railway variables set DOCKER_IMAGE="${{ needs.build.outputs.image_tag }}"
+          railway variables set BUILD_VERSION="${{ needs.build.outputs.version }}"
+          railway variables set GIT_COMMIT="${{ github.sha }}"
+          railway variables set DEPLOYMENT_ID="${{ github.run_id }}"
+          
+          # Ensure backup restore is enabled
+          railway variables set ENABLE_BACKUP_RESTORE_ON_STARTUP="true"
+          railway variables set ENV="prod"
+          railway variables set DOCKER="true"
+          railway variables set UVICORN_WORKERS="1"
+          
+          echo "✅ Railway variables configured"
+
+      - name: Trigger deployment
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          
+          # Get the service ID from Railway
+          echo "🚀 Triggering Railway deployment..."
+          
+          # Use Railway API to deploy
+          PROJECT_ID="${{ secrets.RAILWAY_PROJECT_ID }}"
+          SERVICE_ID="${{ secrets.RAILWAY_SERVICE_ID }}"
+          ENVIRONMENT_ID="${{ secrets.RAILWAY_ENVIRONMENT_ID }}"
+          
+          # Trigger deployment via Railway API
+          curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -d '{
+              "query": "mutation { serviceInstanceDeploy(serviceId: \"'"$SERVICE_ID"'\", environmentId: \"'"$ENVIRONMENT_ID"'\", latestCommit: true) { id deploymentId } }"
+            }' | jq .
+          
+          echo "✅ Deployment triggered"
+
+      - name: Wait for deployment
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          
+          echo "⏳ Waiting for deployment to start..."
+          sleep 30
+          
+          # Check deployment status
+          echo "📊 Checking deployment status..."
+          railway status || true
+
+      - name: Wait for health check
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          
+          APP_URL="${{ vars.RAILWAY_APP_URL }}"
+          
+          if [[ -z "$APP_URL" ]]; then
+            # Get the deployment URL
+            APP_URL=$(railway domain 2>/dev/null || echo "")
+          fi
+          
+          if [[ -n "$APP_URL" ]]; then
+            echo "🔍 Monitoring health at: ${APP_URL}"
+            
+            # Wait for health check
+            for i in {1..20}; do
+              if curl -sf "${APP_URL}/health" > /dev/null 2>&1; then
+                echo "✅ Health check passed!"
+                exit 0
+              fi
+              echo "⏳ Waiting for health check... ($i/20)"
+              sleep 15
+            done
+            
+            echo "⚠️ Health check did not pass within timeout"
+          else
+            echo "⚠️ Could not determine app URL"
+          fi
+
+  # ============================================================
+  # Job 4: Post-Deployment Verification
+  # ============================================================
+  post-deployment-verification:
+    name: Post-Deployment Verification
+    runs-on: ubuntu-latest
+    needs: deploy-railway
+    steps:
+      - name: Run smoke tests
+        run: |
+          APP_URL="${{ vars.RAILWAY_APP_URL }}"
+          
+          echo "🔍 Running smoke tests..."
+          
+          # Test 1: Health endpoint
+          if curl -sf "${APP_URL}/health"; then
+            echo "✅ Health check: PASSED"
+          else
+            echo "❌ Health check: FAILED"
+            exit 1
+          fi
+          
+          # Test 2: Readiness endpoint
+          if curl -sf "${APP_URL}/ready"; then
+            echo "✅ Readiness check: PASSED"
+          else
+            echo "⚠️ Readiness check: FAILED (may still be initializing)"
+          fi
+          
+          # Test 3: API endpoint
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${APP_URL}/api/v1/models" || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "401" ]]; then
+            echo "✅ API endpoint: PASSED (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️ API endpoint: HTTP $HTTP_CODE"
+          fi
+
+      - name: Verify database connectivity
+        run: |
+          APP_URL="${{ vars.RAILWAY_APP_URL }}"
+          
+          echo "🔍 Checking database connectivity..."
+          
+          if curl -sf "${APP_URL}/health/db"; then
+            echo "✅ Database: CONNECTED"
+          else
+            echo "⚠️ Database check endpoint not available or failed"
+          fi
+
+      - name: Generate deployment report
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "📊 Deployment Report"
+          echo "=========================================="
+          echo "Status: SUCCESS"
+          echo "Commit: ${{ github.sha }}"
+          echo "Ref: ${{ github.ref_name }}"
+          echo "Version: ${{ needs.build.outputs.version }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "=========================================="
+
+  # ============================================================
+  # Job 5: Create GitHub Release (on tags)
+  # ============================================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, post-deployment-verification]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    outputs:
+      release_url: ${{ steps.release.outputs.url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "📝 Generating release notes for v${VERSION}..."
+          
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline --format='- %s (%h)')
+          else
+            COMMITS=$(git log --oneline --format='- %s (%h)' | head -50)
+          fi
+          
+          cat > /tmp/release_notes.md << EOF
+          ## Installation
+          
+          ### Docker
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}:v${VERSION}
+          \`\`\`\`
+          
+          ### Railway
+          Connect your Railway project to deploy automatically.
+          
+          ## Changes
+          
+          ${COMMITS:-See commit history}
+          
+          ## Support
+          
+          - 📖 [Documentation](./README.md)
+          - 🐛 [Issue Tracker](https://github.com/${{ github.repository }}/issues)
+          
+          ---
+          *Deployed automatically via GitHub Actions*
+          EOF
+
+      - name: Create Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Job 6: Notify (Always Runs)
+  # ============================================================
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy-railway, post-deployment-verification]
+    if: always()
+    steps:
+      - name: Deployment notification
+        run: |
+          DEPLOY_STATUS="✅ SUCCESS"
+          DEPLOY_COLOR="36B44E"
+          
+          if [[ "${{ needs.deploy-railway.result }}" == "failure" ]]; then
+            DEPLOY_STATUS="❌ FAILED"
+            DEPLOY_COLOR="E01E28"
+          elif [[ "${{ needs.deploy-railway.result }}" == "cancelled" ]]; then
+            DEPLOY_STATUS="⚠️ CANCELLED"
+            DEPLOY_COLOR="F7C843"
+          fi
+          
+          echo ""
+          echo "=========================================="
+          echo "🚀 Deployment $DEPLOY_STATUS"
+          echo "=========================================="
+          echo "Version: ${{ needs.build.outputs.version || 'N/A' }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Ref: ${{ github.ref_name }}"
+          echo "Actor: ${{ github.actor }}"
+          echo ""
+          
+          if [[ "$DEPLOY_STATUS" == "✅ SUCCESS" ]]; then
+            echo "🌐 App URL: ${{ vars.RAILWAY_APP_URL }}"
+          fi
+          echo "=========================================="

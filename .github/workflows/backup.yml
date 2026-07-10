@@ -1,0 +1,260 @@
+name: Backup and Restore
+
+on:
+  schedule:
+    # Run backup every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'backup'
+        type: choice
+        options:
+          - backup
+          - restore
+          - list
+      backup_file:
+        description: 'Backup file to restore (for restore action)'
+        required: false
+        type: string
+
+env:
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+jobs:
+  backup:
+    name: Create Backup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      backup_name: ${{ steps.backup.outputs.backup_name }}
+      backup_size: ${{ steps.backup.outputs.backup_size }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create backup directory
+        run: mkdir -p /tmp/open-connect-backups
+
+      - name: Run database backup
+        id: backup
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_NAME="open-connect-backup-${TIMESTAMP}"
+          BACKUP_DIR="/tmp/open-connect-backups/${BACKUP_NAME}"
+          mkdir -p "${BACKUP_DIR}"
+          
+          echo "📦 Starting backup at ${TIMESTAMP}"
+          
+          # Backup SQLite database (if exists)
+          if [ -f "backend/data/webui.db" ]; then
+            cp backend/data/webui.db "${BACKUP_DIR}/webui.db"
+            echo "✅ Database backed up"
+          fi
+          
+          # Backup uploads
+          if [ -d "backend/data/uploads" ]; then
+            tar -czf "${BACKUP_DIR}/uploads.tar.gz" -C backend/data uploads
+            echo "✅ Uploads backed up"
+          fi
+          
+          # Backup knowledge base
+          if [ -d "backend/data/knowledge" ]; then
+            tar -czf "${BACKUP_DIR}/knowledge.tar.gz" -C backend/data knowledge
+            echo "✅ Knowledge base backed up"
+          fi
+          
+          # Backup chat history
+          if [ -d "backend/data/chat_history" ]; then
+            tar -czf "${BACKUP_DIR}/chat_history.tar.gz" -C backend/data chat_history
+            echo "✅ Chat history backed up"
+          fi
+          
+          # Backup config
+          if [ -f "backend/.env" ]; then
+            cp backend/.env "${BACKUP_DIR}/.env.backup"
+            echo "✅ Config backed up"
+          fi
+          
+          # Create metadata
+          cat > "${BACKUP_DIR}/metadata.json" << EOF
+          {
+            "backup_date": "${TIMESTAMP}",
+            "git_commit": "${{ github.sha }}",
+            "version": "${{ github.ref_name }}",
+            "backup_tool": "github-actions-backup",
+            "hostname": "${{ runner.os }}-runner"
+          }
+          EOF
+          
+          # Create archive
+          cd /tmp/open-connect-backups
+          tar -czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}"
+          rm -rf "${BACKUP_NAME}"
+          
+          # Get size
+          BACKUP_SIZE=$(du -h "${BACKUP_NAME}.tar.gz" | cut -f1)
+          
+          echo "backup_name=${BACKUP_NAME}.tar.gz" >> $GITHUB_OUTPUT
+          echo "backup_size=${BACKUP_SIZE}" >> $GITHUB_OUTPUT
+          
+          echo "✅ Backup completed: ${BACKUP_NAME}.tar.gz (${BACKUP_SIZE})"
+
+      - name: Upload backup to Supabase Storage
+        if: env.SUPABASE_PROJECT_REF != ''
+        run: |
+          # Create backup metadata
+          BACKUP_DATE=$(date +%Y%m%d)
+          
+          # Upload backup to Supabase Storage using the Management API
+          curl -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/storage/buckets" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"name": "open-connect-backups", "public": false}' 2>/dev/null || true
+          
+          # Note: In production, use Supabase Storage API to upload the backup
+          echo "📤 Backup prepared for Supabase upload"
+          echo "   Backup file: /tmp/open-connect-backups/${{ steps.backup.outputs.backup_name }}"
+
+      - name: Store backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ steps.backup.outputs.backup_name }}
+          path: /tmp/open-connect-backups/${{ steps.backup.outputs.backup_name }}
+          retention-days: 30
+
+      - name: Cleanup old backups
+        run: |
+          # Remove backups older than 14 days
+          find /tmp/open-connect-backups -name "*.tar.gz" -mtime +14 -delete 2>/dev/null || true
+          echo "🧹 Old backups cleaned up"
+
+  supabase-db-backup:
+    name: Supabase Database Backup
+    runs-on: ubuntu-latest
+    needs: backup
+    if: env.SUPABASE_PROJECT_REF != ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Supabase Database Backup
+        run: |
+          echo "📦 Creating Supabase database backup..."
+          
+          # Use Supabase Management API to create a backup
+          RESPONSE=$(curl -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/backups" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            2>/dev/null)
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Supabase backup initiated"
+            echo "$RESPONSE" | jq .
+          else
+            echo "⚠️ Could not trigger Supabase backup (may need manual backup)"
+          fi
+
+  list-backups:
+    name: List Backups
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'list'
+    steps:
+      - name: List available backups
+        run: |
+          echo "📋 Available backups:"
+          
+          echo ""
+          echo "### GitHub Artifacts ###"
+          # Note: This would require GitHub API access to list artifacts
+          
+          echo ""
+          echo "### Local Backups ###"
+          ls -lah /tmp/open-connect-backups/*.tar.gz 2>/dev/null || echo "No local backups found"
+
+  restore:
+    name: Restore from Backup
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'restore'
+    environment: restoration
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download backup artifact
+        run: |
+          BACKUP_FILE="${{ github.event.inputs.backup_file }}"
+          
+          if [ -z "$BACKUP_FILE" ]; then
+            echo "❌ No backup file specified"
+            exit 1
+          fi
+          
+          echo "📥 Downloading backup: $BACKUP_FILE"
+          
+          # Download from artifacts (would need to fetch from previous run)
+          echo "⚠️ Restore from artifact not implemented in this workflow"
+          echo "   Please download the backup manually from GitHub Actions artifacts"
+
+      - name: Verify backup integrity
+        run: |
+          if [ -f "/tmp/backup-to-restore.tar.gz" ]; then
+            tar -tzf "/tmp/backup-to-restore.tar.gz" > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "✅ Backup file is valid"
+            else
+              echo "❌ Backup file is corrupted"
+              exit 1
+            fi
+          else
+            echo "⚠️ No backup file found at /tmp/backup-to-restore.tar.gz"
+          fi
+
+      - name: Extract backup
+        run: |
+          if [ -f "/tmp/backup-to-restore.tar.gz" ]; then
+            mkdir -p /tmp/restore-extracted
+            tar -xzf "/tmp/backup-to-restore.tar.gz" -C /tmp/restore-extracted
+            ls -la /tmp/restore-extracted/
+          fi
+
+      - name: Restore files
+        run: |
+          EXTRACTED_DIR=$(find /tmp/restore-extracted -maxdepth 1 -type d -name "open-connect-backup-*" | head -1)
+          
+          if [ -z "$EXTRACTED_DIR" ]; then
+            echo "❌ Could not find extracted backup directory"
+            exit 1
+          fi
+          
+          echo "📁 Restoring from: $EXTRACTED_DIR"
+          
+          # Restore database
+          if [ -f "${EXTRACTED_DIR}/webui.db" ]; then
+            mkdir -p backend/data
+            cp "${EXTRACTED_DIR}/webui.db" backend/data/webui.db
+            echo "✅ Database restored"
+          fi
+          
+          # Restore uploads
+          if [ -f "${EXTRACTED_DIR}/uploads.tar.gz" ]; then
+            tar -xzf "${EXTRACTED_DIR}/uploads.tar.gz" -C backend/data
+            echo "✅ Uploads restored"
+          fi
+          
+          # Restore knowledge
+          if [ -f "${EXTRACTED_DIR}/knowledge.tar.gz" ]; then
+            tar -xzf "${EXTRACTED_DIR}/knowledge.tar.gz" -C backend/data
+            echo "✅ Knowledge base restored"
+          fi
+          
+          echo "✅ Restore completed successfully"

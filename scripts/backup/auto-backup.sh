@@ -1,13 +1,14 @@
 #!/bin/bash
-# Open Connect Auto-Backup Script
+# Open Connect Auto-Backup Script - Production Ready
 # This script performs automated backups with retention management
-# Run via cron: 0 2 * * * /path/to/scripts/backup/auto-backup.sh
+# Run via cron: 0 */6 * * * /path/to/scripts/backup/auto-backup.sh
 
 set -euo pipefail
 
 # Configuration
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
-RETENTION_DAYS="${RETENTION_DAYS:-7}"
+RETENTION_DAYS="${RETENTION_DAYS:-14}"
+RETENTION_COUNT="${RETENTION_COUNT:-10}"
 BACKUP_NAME="open-connect_backup_$(date +%Y%m%d_%H%M%S)"
 BACKUP_PATH="${BACKUP_DIR}/${BACKUP_NAME}"
 
@@ -15,13 +16,22 @@ BACKUP_PATH="${BACKUP_DIR}/${BACKUP_NAME}"
 DATA_DIR="${RAILWAY_VOLUME_MOUNT_DIR:-/app/backend/data}"
 BACKEND_DIR="${BACKEND_DIR:-/app/backend}"
 
+# Supabase Configuration
+SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF:-}"
+SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}"
+SUPABASE_BUCKET="${SUPABASE_BUCKET:-open-connect-backups}"
+
 # Logging
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] $1"
 }
 
 log_error() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [ERROR] $1" >&2
+}
+
+log_success() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
 }
 
 # Create backup directory
@@ -31,39 +41,44 @@ log "=============================================="
 log "Open Connect Auto-Backup Script"
 log "=============================================="
 log "Backup Location: ${BACKUP_PATH}"
-log "Retention: ${RETENTION_DAYS} days"
+log "Retention: ${RETENTION_DAYS} days (max ${RETENTION_COUNT} backups)"
 log ""
 
 # Track backup status
 BACKUP_STATUS=0
 
-# Backup 1: Database
+# ── Backup 1: Database ──────────────────────────────────────────────────────────
 log "1. Backing up database..."
 if [ -f "${DATA_DIR}/webui.db" ]; then
     mkdir -p "${BACKUP_PATH}/database"
     cp "${DATA_DIR}/webui.db" "${BACKUP_PATH}/database/webui.db"
     
-    # Get database size
+    # Create checksum for verification
+    MD5SUM=$(md5sum "${DATA_DIR}/webui.db" | cut -d' ' -f1)
+    echo "${MD5SUM}" > "${BACKUP_PATH}/database/webui.db.md5"
+    
     DB_SIZE=$(du -h "${DATA_DIR}/webui.db" | cut -f1)
     log "   ✓ Database backed up: ${DB_SIZE}"
+    log "   ✓ MD5: ${MD5SUM}"
 else
-    log "   ⚠ No database found at ${DATA_DIR}/webui.db"
+    log_error "No database found at ${DATA_DIR}/webui.db"
     BACKUP_STATUS=1
 fi
 
-# Backup 2: User uploads and files
+# ── Backup 2: User uploads and files ──────────────────────────────────────────
 log "2. Backing up user uploads..."
 if [ -d "${DATA_DIR}/uploads" ]; then
     mkdir -p "${BACKUP_PATH}/uploads"
     cp -r "${DATA_DIR}/uploads" "${BACKUP_PATH}/uploads"
     
     UPLOADS_SIZE=$(du -sh "${DATA_DIR}/uploads" | cut -f1)
-    log "   ✓ User uploads backed up: ${UPLOADS_SIZE}"
+    UPLOADS_COUNT=$(find "${DATA_DIR}/uploads" -type f | wc -l)
+    log "   ✓ User uploads backed up: ${UPLOADS_SIZE} (${UPLOADS_COUNT} files)"
 else
     log "   ⚠ No uploads directory found"
 fi
 
-# Backup 3: Knowledge base
+# ── Backup 3: Knowledge base ────────────────────────────────────────────────────
 log "3. Backing up knowledge base..."
 if [ -d "${DATA_DIR}/knowledge" ]; then
     mkdir -p "${BACKUP_PATH}/knowledge"
@@ -75,7 +90,7 @@ else
     log "   ⚠ No knowledge base found"
 fi
 
-# Backup 4: Secret key
+# ── Backup 4: Secret key ──────────────────────────────────────────────────────
 log "4. Backing up secret key..."
 if [ -f "${BACKEND_DIR}/.webui_secret_key" ]; then
     cp "${BACKEND_DIR}/.webui_secret_key" "${BACKUP_PATH}/.webui_secret_key"
@@ -84,32 +99,41 @@ else
     log "   ⚠ No secret key file found"
 fi
 
-# Backup 5: Config (if exists)
+# ── Backup 5: Config (if exists) ─────────────────────────────────────────────
 log "5. Backing up configuration..."
 if [ -f "${BACKEND_DIR}/.env" ]; then
     cp "${BACKEND_DIR}/.env" "${BACKUP_PATH}/.env.backup"
     log "   ✓ Configuration backed up"
 fi
 
-# Backup 6: Chat history
+# ── Backup 6: Chat history ─────────────────────────────────────────────────────
 log "6. Backing up chat history..."
 if [ -d "${DATA_DIR}/chat_history" ]; then
     mkdir -p "${BACKUP_PATH}/chat_history"
     cp -r "${DATA_DIR}/chat_history" "${BACKUP_PATH}/chat_history"
-    log "   ✓ Chat history backed up"
+    CHAT_SIZE=$(du -sh "${DATA_DIR}/chat_history" | cut -f1)
+    log "   ✓ Chat history backed up: ${CHAT_SIZE}"
 else
     log "   ⚠ No chat history found"
 fi
 
-# Create metadata
-log "7. Creating backup metadata..."
+# ── Backup 7: Memories and Notes ──────────────────────────────────────────────
+log "7. Backing up memories and notes..."
+[ -d "${DATA_DIR}/memories" ] && cp -r "${DATA_DIR}/memories" "${BACKUP_PATH}/" 2>/dev/null || true
+[ -d "${DATA_DIR}/notes" ] && cp -r "${DATA_DIR}/notes" "${BACKUP_PATH}/" 2>/dev/null || true
+log "   ✓ Memories and notes backed up"
+
+# ── Backup 8: Metadata ────────────────────────────────────────────────────────
+log "8. Creating backup metadata..."
 cat > "${BACKUP_PATH}/metadata.json" << EOF
 {
     "backup_date": "$(date +%Y-%m-%d_%H:%M:%S)",
-    "app_version": "1.0.0",
+    "app_version": "${APP_VERSION:-unknown}",
+    "git_commit": "${GIT_COMMIT:-unknown}",
     "backup_tool": "open-connect-auto-backup",
     "hostname": "${HOSTNAME:-unknown}",
     "retention_days": ${RETENTION_DAYS},
+    "supabase_bucket": "${SUPABASE_BUCKET}",
     "files_included": [
         "database/webui.db",
         "uploads/",
@@ -117,54 +141,96 @@ cat > "${BACKUP_PATH}/metadata.json" << EOF
         ".webui_secret_key",
         ".env.backup",
         "chat_history/",
+        "memories/",
+        "notes/",
         "metadata.json"
     ]
 }
 EOF
 log "   ✓ Metadata created"
 
-# Create archive
-log "8. Creating archive..."
+# ── Create archive ─────────────────────────────────────────────────────────────
+log "9. Creating archive..."
 cd "${BACKUP_DIR}"
 tar -czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}"
 ARCHIVE_SIZE=$(du -h "${BACKUP_NAME}.tar.gz" | cut -f1)
 rm -rf "${BACKUP_NAME}"
 log "   ✓ Archive created: ${ARCHIVE_SIZE}"
 
-# Create latest symlink
+# Create latest symlinks
 ln -sfn "${BACKUP_NAME}.tar.gz" "${BACKUP_DIR}/latest.tar.gz"
+ln -sfn "${BACKUP_NAME}.tar.gz" "${BACKUP_DIR}/latest-backup.tar.gz"
 
-# Cleanup old backups
-log "9. Cleaning up old backups (retention: ${RETENTION_DAYS} days)..."
-find "${BACKUP_DIR}" -name "open-connect_backup_*.tar.gz" -type f -mtime +${RETENTION_DAYS} -delete
+# ── Upload to Supabase (if configured) ──────────────────────────────────────────
+if [ -n "${SUPABASE_PROJECT_REF}" ] && [ -n "${SUPABASE_ACCESS_TOKEN}" ]; then
+    log ""
+    log "10. Uploading to Supabase Storage..."
+    
+    # Create bucket if it doesn't exist
+    curl -s -X POST \
+        "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/storage/buckets" \
+        -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\": \"${SUPABASE_BUCKET}\", \"public\": false, \"file_size_limit\": 1073741824}" \
+        2>/dev/null || true
+    
+    # Upload the backup
+    UPLOAD_RESPONSE=$(curl -s -X POST \
+        "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/upload" \
+        -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+        -H "Content-Type: application/octet-stream" \
+        -H "x-upsert: true" \
+        --data-binary @"${BACKUP_NAME}.tar.gz" \
+        "auto/${BACKUP_NAME}.tar.gz" 2>/dev/null)
+    
+    if echo "${UPLOAD_RESPONSE}" | grep -q '"error"'; then
+        log_error "Failed to upload to Supabase"
+    else
+        log_success "   Backup uploaded to Supabase"
+    fi
+fi
+
+# ── Cleanup old backups ────────────────────────────────────────────────────────
+log ""
+log "11. Cleaning up old backups (retention: ${RETENTION_DAYS} days, max ${RETENTION_COUNT})..."
+
+# Remove by count
+ls -t "${BACKUP_DIR}"/open-connect_backup_*.tar.gz 2>/dev/null | tail -n +$((RETENTION_COUNT + 1)) | xargs -r rm -f
+
+# Remove by age
+find "${BACKUP_DIR}" -name "open-connect_backup_*.tar.gz" -type f -mtime +${RETENTION_DAYS} -delete 2>/dev/null || true
+
 OLD_BACKUPS=$(find "${BACKUP_DIR}" -name "open-connect_backup_*.tar.gz" -type f | wc -l)
 log "   ✓ Cleanup complete. ${OLD_BACKUPS} backups remaining"
 
-# Verify backup integrity
-log "10. Verifying backup integrity..."
+# ── Verify backup integrity ────────────────────────────────────────────────────
+log ""
+log "12. Verifying backup integrity..."
 if tar -tzf "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" > /dev/null 2>&1; then
-    log "    ✓ Backup verified successfully"
+    log_success "   Backup verified successfully"
 else
-    log_error "Backup verification failed!"
+    log_error "   Backup verification failed!"
     BACKUP_STATUS=1
 fi
 
 log ""
 log "=============================================="
 if [ $BACKUP_STATUS -eq 0 ]; then
-    log "Backup completed successfully!"
+    log_success "Backup completed successfully!"
 else
-    log "Backup completed with warnings"
+    log_error "Backup completed with warnings"
 fi
 log "=============================================="
 log "Archive: ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
-log "Latest:  ${BACKUP_DIR}/latest.tar.gz -> ${BACKUP_NAME}.tar.gz"
+log "Size: ${ARCHIVE_SIZE}"
+log "Latest: ${BACKUP_DIR}/latest.tar.gz"
 log ""
 
 # Output for logging/monitoring
 echo "BACKUP_STATUS=${BACKUP_STATUS}"
 echo "BACKUP_FILE=${BACKUP_NAME}.tar.gz"
 echo "BACKUP_SIZE=${ARCHIVE_SIZE}"
+echo "TIMESTAMP=$(date +%Y-%m-%d_%H:%M:%S)"
 
 # Exit with status
 exit $BACKUP_STATUS

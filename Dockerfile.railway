@@ -1,0 +1,319 @@
+# =============================================================================
+# Open Connect - Railway Production Dockerfile
+# =============================================================================
+# Optimized for Railway deployment with:
+# - Multi-stage build for smaller image
+# - Pre-installed plugins
+# - Health monitoring
+# - Data persistence support
+# =============================================================================
+
+# syntax=docker/dockerfile:1
+
+# ============================================================
+# Build Arguments
+# ============================================================
+ARG USE_CUDA=false
+ARG USE_OLLAMA=false
+ARG USE_SLIM=false
+ARG USE_PERMISSION_HARDENING=false
+ARG USE_CUDA_VER=cu128
+ARG USE_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+ARG USE_RERANKING_MODEL=""
+ARG USE_AUXILIARY_EMBEDDING_MODEL=TaylorAI/bge-micro-v2
+ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"
+ARG BUILD_HASH=dev-build
+ARG UID=0
+ARG GID=0
+
+# ============================================================
+# Stage 1: Build Frontend
+# ============================================================
+FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
+
+ARG BUILD_HASH
+
+WORKDIR /app
+
+# Install git for version info
+RUN apk add --no-cache git
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci --force
+
+# Copy source
+COPY . .
+
+# Build environment
+ENV APP_BUILD_HASH=${BUILD_HASH}
+
+# Build frontend
+RUN npm run build
+
+# ============================================================
+# Stage 2: Backend Base
+# ============================================================
+FROM python:3.11-slim-bookworm AS base
+
+# Build arguments
+ARG USE_CUDA
+ARG USE_OLLAMA
+ARG USE_CUDA_VER
+ARG USE_SLIM
+ARG USE_PERMISSION_HARDENING
+ARG USE_EMBEDDING_MODEL
+ARG USE_RERANKING_MODEL
+ARG USE_AUXILIARY_EMBEDDING_MODEL
+ARG UID
+ARG GID
+
+# Python settings
+ENV PYTHONUNBUFFERED=1
+
+# Base environment
+ENV ENV=prod \
+    PORT=8080 \
+    USE_OLLAMA_DOCKER=${USE_OLLAMA} \
+    USE_CUDA_DOCKER=${USE_CUDA} \
+    USE_SLIM_DOCKER=${USE_SLIM} \
+    USE_CUDA_DOCKER_VER=${USE_CUDA_VER} \
+    USE_EMBEDDING_MODEL_DOCKER=${USE_EMBEDDING_MODEL} \
+    USE_RERANKING_MODEL_DOCKER=${USE_RERANKING_MODEL} \
+    USE_AUXILIARY_EMBEDDING_MODEL_DOCKER=${USE_AUXILIARY_EMBEDDING_MODEL}
+
+# API Configuration
+ENV OLLAMA_BASE_URL="/ollama" \
+    OPENAI_API_BASE_URL=""
+
+# Security
+ENV OPENAI_API_KEY="" \
+    WEBUI_SECRET_KEY="" \
+    SCARF_NO_ANALYTICS=true \
+    DO_NOT_TRACK=true \
+    ANONYMIZED_TELEMETRY=false
+
+# Whisper Settings
+ENV WHISPER_MODEL="base" \
+    WHISPER_MODEL_DIR="/app/backend/data/cache/whisper/models"
+
+# RAG Settings
+ENV RAG_EMBEDDING_MODEL="$USE_EMBEDDING_MODEL_DOCKER" \
+    RAG_RERANKING_MODEL="$USE_RERANKING_MODEL_DOCKER" \
+    AUXILIARY_EMBEDDING_MODEL="$USE_AUXILIARY_EMBEDDING_MODEL_DOCKER" \
+    SENTENCE_TRANSFORMERS_HOME="/app/backend/data/cache/embedding/models"
+
+# Tiktoken
+ENV TIKTOKEN_ENCODING_NAME="cl100k_base" \
+    TIKTOKEN_CACHE_DIR="/app/backend/data/cache/tiktoken"
+
+# Hugging Face
+ENV HF_HOME="/app/backend/data/cache/embedding/models"
+
+WORKDIR /app/backend
+
+ENV HOME=/root
+
+# Create app user/group if not root
+RUN if [ $UID -ne 0 ]; then \
+    if [ $GID -ne 0 ]; then \
+    addgroup --gid $GID app; \
+    fi; \
+    adduser --uid $UID --gid $GID --home $HOME --disabled-password --no-create-home app; \
+    fi
+
+# ChromaDB telemetry fix
+RUN mkdir -p $HOME/.cache/chroma
+RUN echo -n 00000000-0000-0000-0000-000000000000 > $HOME/.cache/chroma/telemetry_user_id
+
+# Permissions
+RUN chown -R $UID:$GID /app $HOME
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git build-essential pandoc gcc netcat-openbsd curl jq ca-certificates \
+    libmariadb-dev \
+    python3-dev \
+    ffmpeg libsm6 libxext6 zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY --chown=$UID:$GID ./backend/requirements.txt ./requirements.txt
+
+# UV configuration
+ENV UV_LINK_MODE=copy
+
+# ============================================================
+# Stage 3: Install Python Dependencies
+# ============================================================
+FROM base AS python-deps
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir uv
+
+# Install dependencies based on configuration
+RUN if [ "$USE_CUDA" = "true" ]; then \
+    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER --no-cache-dir; \
+    uv pip install --system -r requirements.txt --no-cache-dir; \
+    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')"; \
+    python -c "from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
+    python -c "import tiktoken; tiktoken.get_encoding(os.environ['TIKTOKEN_ENCODING_NAME'])"; \
+    python -c "import nltk; nltk.download('punkt_tab')"; \
+    else \
+    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir; \
+    uv pip install --system -r requirements.txt --no-cache-dir; \
+    if [ "$USE_SLIM" != "true" ]; then \
+    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')"; \
+    python -c "from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
+    python -c "import tiktoken; tiktoken.get_encoding(os.environ['TIKTOKEN_ENCODING_NAME'])"; \
+    python -c "import nltk; nltk.download('punkt_tab')"; \
+    fi; \
+    fi; \
+    mkdir -p /app/backend/data; chown -R $UID:$GID /app/backend/data/; \
+    rm -rf /var/lib/apt/lists/*
+
+# ============================================================
+# Stage 4: Ollama (if enabled)
+# ============================================================
+FROM base AS ollama-install
+
+RUN if [ "$USE_OLLAMA" = "true" ]; then \
+    date +%s > /tmp/ollama_build_hash && \
+    curl -fsSL https://ollama.com/install.sh | sh && \
+    rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# ============================================================
+# Stage 5: Final Production Image
+# ============================================================
+FROM base AS production
+
+# Copy Python dependencies from stage 3
+COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python-deps /usr/local/bin /usr/local/bin
+
+# Copy Ollama from stage 4 (if installed)
+COPY --from=ollama-install /usr/local/bin/ollama /usr/local/bin/ollama 2>/dev/null || true
+COPY --from=ollama-install /usr/local/lib/ollama /usr/local/lib/ollama 2>/dev/null || true
+
+# Copy built frontend
+COPY --chown=$UID:$GID --from=build /app/build /app/build
+COPY --chown=$UID:$GID --from=build /app/CHANGELOG.md /app/CHANGELOG.md
+COPY --chown=$UID:$GID --from=build /app/package.json /app/package.json
+
+# Copy backend files (copy BEFORE plugin installation for proper layering)
+COPY --chown=$UID:$GID ./backend /app/backend
+
+# ============================================================
+# Plugin Installation
+# ============================================================
+RUN echo "==========================================" && \
+    echo "Installing Open Connect Plugins" && \
+    echo "==========================================" && \
+    \
+    # Create plugins directory
+    mkdir -p /app/backend/open_webui/plugins && \
+    mkdir -p /app/backend/open_webui/skills && \
+    mkdir -p /app/backend/open_webui/pipelines && \
+    mkdir -p /app/backend/open_webui/connectors && \
+    \
+    # Install plugins from repositories
+    echo "Installing plugins from repositories..." && \
+    \
+    # Fu-Jie/openwebui-extensions
+    if git clone --depth 1 https://github.com/Fu-Jie/openwebui-extensions.git /tmp/plugins-1 2>/dev/null; then \
+        cp -r /tmp/plugins-1/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        cp -r /tmp/plugins-1/tools/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        cp -r /tmp/plugins-1/functions/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        rm -rf /tmp/plugins-1; \
+        echo "  - Fu-Jie/openwebui-extensions: installed"; \
+    fi && \
+    \
+    # iChristGit/OpenWebui-Tools
+    if git clone --depth 1 https://github.com/iChristGit/OpenWebui-Tools.git /tmp/plugins-2 2>/dev/null; then \
+        cp -r /tmp/plugins-2/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        cp -r /tmp/plugins-2/tools/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        rm -rf /tmp/plugins-2; \
+        echo "  - iChristGit/OpenWebui-Tools: installed"; \
+    fi && \
+    \
+    # Haervwe/open-webui-tools
+    if git clone --depth 1 https://github.com/Haervwe/open-webui-tools.git /tmp/plugins-3 2>/dev/null; then \
+        cp -r /tmp/plugins-3/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        rm -rf /tmp/plugins-3; \
+        echo "  - Haervwe/open-webui-tools: installed"; \
+    fi && \
+    \
+    # Classic298/open-webui-plugins
+    if git clone --depth 1 https://github.com/Classic298/open-webui-plugins.git /tmp/plugins-4 2>/dev/null; then \
+        cp -r /tmp/plugins-4/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        rm -rf /tmp/plugins-4; \
+        echo "  - Classic298/open-webui-plugins: installed"; \
+    fi && \
+    \
+    # suurt8ll/open_webui_functions
+    if git clone --depth 1 https://github.com/suurt8ll/open_webui_functions.git /tmp/plugins-5 2>/dev/null; then \
+        cp -r /tmp/plugins-5/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        cp -r /tmp/plugins-5/functions/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        rm -rf /tmp/plugins-5; \
+        echo "  - suurt8ll/open_webui_functions: installed"; \
+    fi && \
+    \
+    # rbb-dev/Open-WebUI-OpenRouter-pipe
+    if git clone --depth 1 https://github.com/rbb-dev/Open-WebUI-OpenRouter-pipe.git /tmp/plugins-6 2>/dev/null; then \
+        cp -r /tmp/plugins-6/*.py /app/backend/open_webui/plugins/ 2>/dev/null || true; \
+        mkdir -p /app/backend/open_webui/pipelines; \
+        cp -r /tmp/plugins-6/pipelines/*.py /app/backend/open_webui/pipelines/ 2>/dev/null || true; \
+        rm -rf /tmp/plugins-6; \
+        echo "  - rbb-dev/Open-WebUI-OpenRouter-pipe: installed"; \
+    fi && \
+    \
+    # Count installed plugins
+    PLUGIN_COUNT=$(find /app/backend/open_webui/plugins -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l) && \
+    echo "" && \
+    echo "==========================================" && \
+    echo "Plugins installed: ${PLUGIN_COUNT}" && \
+    echo "==========================================" && \
+    \
+    # Cleanup
+    rm -rf /tmp/plugins-* 2>/dev/null || true
+
+# Ensure proper permissions
+RUN chown -R $UID:$GID /app 2>/dev/null || true
+
+# Create data directory
+RUN mkdir -p /app/backend/data && \
+    chown $UID:$GID /app/backend/data
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK CMD curl --silent --fail http://localhost:${PORT:-8080}/health | jq -ne 'input.status == true' || exit 1
+
+# Permission hardening
+RUN if [ "$USE_PERMISSION_HARDENING" = "true" ]; then \
+    set -eux; \
+    chgrp -R 0 /app /root || true; \
+    chmod -R g+rwX /app /root || true; \
+    find /app -type d -exec chmod g+s {} + || true; \
+    find /root -type d -exec chmod g+s {} + || true; \
+    fi
+
+# Switch to app user
+USER $UID:$GID
+
+# Build info
+ARG BUILD_HASH
+ENV WEBUI_BUILD_VERSION=${BUILD_HASH}
+ENV DOCKER=true
+
+# Copy startup scripts
+COPY --chown=$UID:$GID railway-start.sh /app/backend/railway-start.sh
+RUN chmod +x /app/backend/railway-start.sh
+
+# Default command
+CMD [ "bash", "/app/backend/railway-start.sh" ]
