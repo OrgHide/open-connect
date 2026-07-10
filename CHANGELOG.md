@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-07-09 - Open Connect Initial Release
+
+### Added
+
+- 🎉 **Open Connect Rebrand** - Full rebranding from Open WebUI to Open Connect
+- 🚀 **Railway Deployment** - Production-ready deployment on Railway
+- 🤖 **Multiple AI Providers** - Support for OpenRouter, Hugging Face, Groq, Ollama, and more
+- 🔐 **Authentication System** - User registration and login with JWT tokens
+- 💾 **Supabase Integration** - PostgreSQL database support via Supabase
+- 🔍 **Web Search** - Built-in web search capability
+- 💻 **Code Execution** - Python code execution in chat
+- 📱 **Mobile PWA** - Installable as mobile application
+- 🔧 **Auto-Backup** - Automated backup scripts with retention
+- 🧠 **Memory System** - Persistent user memories
+- 📝 **Notes** - Built-in note-taking
+- ⚡ **Automations** - Workflow automations
+- ⭐ **Message Rating** - Rate AI responses
+- 🔑 **API Keys** - Generate API keys for external use
+- 📁 **Folders** - Organize chats and files
+- 💬 **Channels** - Multi-channel support
+- 🎙️ **Speech-to-Text** - Whisper-based voice input
+- 🗣️ **Text-to-Speech** - Built-in TTS support
+
+### Features Enabled by Default
+
+- Web Search (with confirmation)
+- Code Execution & Interpreter
+- Memories
+- Notes
+- Automations
+- Message Rating
+- API Keys
+- User Signups
+- Folders
+- Channels
+- Direct Connections
+- Model Caching
+- Speech-to-Text
+
+### Configuration
+
+- **Database**: SQLite (default) or Supabase PostgreSQL
+- **API Providers**: OpenRouter (with Google Vertex AI), Hugging Face, Groq
+- **Default Models**: Gemma-3-4b, Qwen-2.5-7b, Phi-4, DeepSeek-R1, Claude-3.5-Haiku, Llama-3.1-8b
+- **Health Check**: `/health` endpoint with 300s timeout
+
 ## [0.10.2] - 2026-07-01
 
 ### Added

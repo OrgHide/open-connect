@@ -7,6 +7,8 @@ services:
     tty: true
     restart: unless-stopped
     image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+    profiles:
+      - ollama
 
   open-webui:
     build:
@@ -21,11 +23,107 @@ services:
     ports:
       - ${OPEN_WEBUI_PORT-3000}:8080
     environment:
+      # Core Settings
+      - 'ENV=prod'
+      - 'DOCKER=true'
+      - 'PORT=8080'
+      
+      # WebUI Configuration
+      - 'WEBUI_NAME=Open Connect'
+      - 'WEBUI_URL=https://open-connect-production.up.railway.app'
+      - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}'
+      - 'WEBUI_AUTH=true'
+      - 'ENABLE_SIGNUP=true'
+      - 'ENABLE_API_KEYS=true'
+      
+      # Ollama Configuration
       - 'OLLAMA_BASE_URL=http://ollama:11434'
-      - 'WEBUI_SECRET_KEY='
+      - 'OLLAMA_API_BASE_URL=http://ollama:11434/api'
+      
+      # OpenAI/External API Configuration
+      - 'OPENAI_API_KEY=${OPENAI_API_KEY}'
+      - 'OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}'
+      
+      # Hugging Face
+      - 'HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}'
+      
+      # Groq
+      - 'GROQ_API_KEY=${GROQ_API_KEY}'
+      
+      # Default Models (Free OpenRouter Models)
+      - 'DEFAULT_MODELS=google/gemma-3-4b-it,qwen/qwen-2.5-7b-instruct,microsoft/phi-4,deepseek/deepseek-r1,anthropic/claude-3.5-haiku,meta/llama-3.1-8b-instruct'
+      
+      # Database Configuration (SQLite default, use DATABASE_URL for PostgreSQL)
+      - 'DATABASE_URL=${DATABASE_URL}'
+      
+      # Supabase Configuration
+      - 'SUPABASE_URL=${SUPABASE_URL}'
+      - 'SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}'
+      - 'SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}'
+      
+      # Google Vertex AI (Optional - for advanced AI features)
+      - 'GOOGLE_APPLICATION_CREDENTIALS_JSON=${GOOGLE_APPLICATION_CREDENTIALS_JSON}'
+      
+      # Web Search Configuration
+      - 'WEB_SEARCH=true'
+      - 'WEB_SEARCH_CONFIRMATION=true'
+      - 'WEB_SEARCH_BYPASS_EMBEDDING=true'
+      
+      # Code Execution
+      - 'CODE_EXECUTION=true'
+      - 'CODE_INTERPRETER=true'
+      
+      # RAG/Vector Search
+      - 'RAG_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2'
+      - 'RAG_TOP_K=5'
+      - 'RAG_RELEVANCE_THRESHOLD=0.5'
+      
+      # Whisper (Speech to Text)
+      - 'WHISPER_MODEL=base'
+      
+      # Feature Flags
+      - 'ENABLE_MEMORIES=true'
+      - 'ENABLE_NOTES=true'
+      - 'ENABLE_AUTOMATIONS=true'
+      - 'ENABLE_MESSAGE_RATING=true'
+      - 'ENABLE_FOLDERS=true'
+      - 'ENABLE_CHANNELS=true'
+      - 'ENABLE_MODELS=true'
+      
+      # Direct Connections
+      - 'ENABLE_DIRECT_CONNECTIONS=true'
+      - 'CACHE_BASE_MODEL_LIST=true'
+      
+      # JWT Configuration
+      - 'JWT_EXPIRY=4w'
+      
+      # CORS Configuration
+      - 'CORS_ALLOW_ORIGIN=*'
+      
+      # File Upload
+      - 'MAX_FILE_UPLOAD_SIZE=100'
+      
+      # Task Configuration
+      - 'TASK_MODEL=google/gemma-3-4b-it'
+      - 'TASK_MODEL_EXTERNAL=google/gemma-3-4b-it'
+      
+      # Audio Configuration
+      - 'AUDIO_TTS_ENABLED=true'
+      - 'AUDIO_STT_ENABLED=true'
+      
+      # Logging
+      - 'GLOBAL_LOG_LEVEL=INFO'
+      - 'LOG_LEVEL=INFO'
+      
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
 volumes:
   ollama: {}
