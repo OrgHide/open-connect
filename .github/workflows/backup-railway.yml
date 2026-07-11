@@ -30,6 +30,8 @@ env:
   SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
   SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  SUPABASE_BUCKET: open-connect-backups
+  BACKUP_PREFIX: backups
 
 jobs:
   # ============================================================
@@ -149,12 +151,12 @@ jobs:
             
             # Upload backup
             UPLOAD_RESULT=$(curl -s -X POST \
-              "https://api.supabase.com/v1/storage/open-connect-backups/objects/upload" \
+              "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/upload" \
               -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
               -H "Content-Type: application/octet-stream" \
               -H "x-upsert: true" \
               --data-binary @"$BACKUP_FILE" \
-              "backups/${{ steps.backup.outputs.backup_name }}" 2>/dev/null)
+              "${BACKUP_PREFIX}/${{ steps.backup.outputs.backup_name }}" 2>/dev/null)
             
             if echo "$UPLOAD_RESULT" | grep -q '"error"'; then
               echo "⚠️ Supabase upload may have failed: $UPLOAD_RESULT"
@@ -208,7 +210,7 @@ jobs:
             if [[ -n "$SUPABASE_PROJECT_REF" ]]; then
               # Get latest backup from Supabase
               LATEST_BACKUP=$(curl -s \
-                "https://api.supabase.com/v1/storage/open-connect-backups/objects/list" \
+                "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/list" \
                 -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
                 -d '{"prefix": "backups/", "sortBy": {"column": "created_at", "order": "desc"}}' 2>/dev/null | \
                 jq -r '.[0].name' 2>/dev/null || echo "")
@@ -216,7 +218,7 @@ jobs:
               if [[ -n "$LATEST_BACKUP" ]]; then
                 echo "Found backup: $LATEST_BACKUP"
                 curl -s -L \
-                  "https://api.supabase.com/v1/storage/open-connect-backups/objects/download/${LATEST_BACKUP}" \
+                  "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/download/${LATEST_BACKUP}" \
                   -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
                   -o "/tmp/restore_backup.tar.gz"
               fi
@@ -287,8 +289,12 @@ jobs:
           
           export PATH="$HOME/.railway/bin:$PATH"
           
-          # Enable backup restore on startup
+          # Enable backup restore on startup and align bucket/prefix with the bootstrap script
           railway variables set ENABLE_BACKUP_RESTORE_ON_STARTUP="true"
+          railway variables set SUPABASE_BUCKET="${SUPABASE_BUCKET}"
+          railway variables set BACKUP_PREFIX="${BACKUP_PREFIX}"
+          railway variables set SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF}"
+          railway variables set SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN}"
           
           echo "✅ Railway configured for restore"
 
@@ -356,9 +362,9 @@ jobs:
           echo "### Supabase Storage ###"
           
           BACKUPS=$(curl -s \
-            "https://api.supabase.com/v1/storage/open-connect-backups/objects/list" \
+            "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/list" \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -d '{"prefix": "backups/", "sortBy": {"column": "created_at", "order": "desc"}, "limit": 10}}' 2>/dev/null || echo "[]")
+            -d '{"prefix": "backups/", "sortBy": {"column": "created_at", "order": "desc"}, "limit": 10}' 2>/dev/null || echo "[]")
           
           echo "$BACKUPS" | jq -r '.[] | "- \(.name) (\(.metadata?.size || .size // 0 | . / 1024 / 1024 | floor)MB) - \(.created_at)"' 2>/dev/null || echo "No backups found"
 
@@ -376,13 +382,13 @@ jobs:
           
           if [[ -n "$SUPABASE_PROJECT_REF" ]]; then
             LATEST_BACKUP=$(curl -s \
-              "https://api.supabase.com/v1/storage/open-connect-backups/objects/list" \
+              "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/list" \
               -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
               -d '{"prefix": "backups/"}' 2>/dev/null | jq -r '.[-1].name' 2>/dev/null || echo "")
             
             if [[ -n "$LATEST_BACKUP" ]]; then
               curl -s -L \
-                "https://api.supabase.com/v1/storage/open-connect-backups/objects/download/${LATEST_BACKUP}" \
+                "https://api.supabase.com/v1/storage/${SUPABASE_BUCKET}/objects/download/${LATEST_BACKUP}" \
                 -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
                 -o "/tmp/verify_backup.tar.gz"
               
