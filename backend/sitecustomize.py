@@ -1,38 +1,51 @@
-"""Railway startup shim.
-
-Avoid blocking Railway readiness on expensive dependency and RAG model bootstrap.
-"""
-
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
-
-# Keep startup from eagerly downloading the default SentenceTransformer model.
-# The app can still use external embeddings/reranking later if configured.
-os.environ.setdefault('ENABLE_BASE_MODELS_CACHE', 'false')
-os.environ.setdefault('ENABLE_RAG_HYBRID_SEARCH', 'false')
-os.environ.setdefault('RAG_EMBEDDING_ENGINE', 'openai')
-os.environ.setdefault('RAG_EMBEDDING_MODEL_AUTO_UPDATE', 'false')
+from contextlib import asynccontextmanager
 
 log = logging.getLogger(__name__)
 
-try:
-    import open_webui.utils.plugin as plugin_module
-except Exception as exc:  # pragma: no cover - best effort startup shim
-    log.debug("sitecustomize could not import open_webui.utils.plugin: %s", exc)
-else:
-    original_install = getattr(plugin_module, "install_tool_and_function_dependencies", None)
 
-    if original_install is not None:
+def _patch_open_webui_fastapi_lifespan() -> None:
+    try:
+        from fastapi import FastAPI
+    except Exception:
+        return
 
-        async def _install_tool_and_function_dependencies(*args, **kwargs):
-            try:
-                asyncio.create_task(original_install(*args, **kwargs))
-            except RuntimeError:
-                await original_install(*args, **kwargs)
-            return None
+    original_init = FastAPI.__init__
+    if getattr(original_init, '__open_connect_bootstrap_patch__', False):
+        return
 
-        plugin_module.install_tool_and_function_dependencies = _install_tool_and_function_dependencies
-        log.info("Patched open_webui.utils.plugin.install_tool_and_function_dependencies to run in background")
+    def patched_init(self, *args, **kwargs):
+        lifespan = kwargs.get('lifespan')
+        if lifespan is not None and getattr(lifespan, '__module__', '') == 'open_webui.main':
+            @asynccontextmanager
+            async def wrapped_lifespan(app):
+                async with lifespan(app):
+                    try:
+                        from open_webui.integrations import init_integrations
+                        from open_webui.utils.workspace_bootstrap import bootstrap_workspace_resources
+
+                        init_integrations()
+                        if not getattr(app.state, '_open_connect_workspace_bootstrap_started', False):
+                            app.state._open_connect_workspace_bootstrap_started = True
+                            app.state.workspace_bootstrap_task = asyncio.create_task(bootstrap_workspace_resources())
+                    except Exception as exc:
+                        log.warning('Open Connect workspace bootstrap setup failed: %s', exc)
+
+                    yield
+
+                    task = getattr(app.state, 'workspace_bootstrap_task', None)
+                    if task is not None:
+                        task.cancel()
+
+            kwargs['lifespan'] = wrapped_lifespan
+
+        return original_init(self, *args, **kwargs)
+
+    patched_init.__open_connect_bootstrap_patch__ = True
+    FastAPI.__init__ = patched_init
+
+
+_patch_open_webui_fastapi_lifespan()
