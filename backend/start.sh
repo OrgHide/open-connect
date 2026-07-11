@@ -17,6 +17,13 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "$SCRIPT_DIR" || exit 1
 
+# Keep Railway startup responsive by avoiding eager local RAG model downloads.
+# The app can still use external embeddings/reranking later if configured.
+export ENABLE_BASE_MODELS_CACHE="${ENABLE_BASE_MODELS_CACHE:-false}"
+export ENABLE_RAG_HYBRID_SEARCH="${ENABLE_RAG_HYBRID_SEARCH:-false}"
+export RAG_EMBEDDING_ENGINE="${RAG_EMBEDDING_ENGINE:-openai}"
+export RAG_EMBEDDING_MODEL_AUTO_UPDATE="${RAG_EMBEDDING_MODEL_AUTO_UPDATE:-false}"
+
 # ── Logging Setup ───────────────────────────────────────────────────────────
 LOG_FILE="${LOG_FILE:-/app/backend/startup.log}"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -94,7 +101,7 @@ else
     log_info "No existing database found, will create on first run"
 fi
 
-# ── Backup check on startup (if backup restoration is enabled) ─────────────────
+# ── Backup check on startup (if backup restoration is enabled) ───────────────
 if [[ "${ENABLE_BACKUP_RESTORE_ON_STARTUP:-false}" == "true" ]]; then
     log_info "Checking for backup to restore..."
     if [[ -f "/tmp/restore/latest.sqlite" ]]; then
@@ -113,7 +120,7 @@ if [[ "${USE_OLLAMA_DOCKER,,}" == "true" ]]; then
   log_info "Ollama started with PID: ${OLLAMA_PID}"
 fi
 
-# ── CUDA library paths ──────────────────────────────────────────────────────
+# ── CUDA library paths ───────────────────────────────────────────────────────
 
 if [[ "${USE_CUDA_DOCKER,,}" == "true" ]]; then
   log_info "CUDA enabled — extending LD_LIBRARY_PATH for torch/cudnn libraries."
@@ -150,7 +157,7 @@ if [[ -n "${SPACE_ID:-}" ]]; then
   export WEBUI_URL="${SPACE_HOST}"
 fi
 
-# ── Health monitoring setup ───────────────────────────────────────────────────
+# ── Health monitoring setup ──────────────────────────────────────────────────
 HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-30}"
 MAX_RESTART_ATTEMPTS="${MAX_RESTART_ATTEMPTS:-5}"
 RESTART_COOLDOWN="${RESTART_COOLDOWN:-60}"
