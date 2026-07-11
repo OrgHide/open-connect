@@ -193,6 +193,14 @@ start_health_monitor
 
 PYTHON_CMD=$(command -v python3 || command -v python)
 UVICORN_WORKERS="${UVICORN_WORKERS:-1}"
+UVICORN_LOG_LEVEL="$(printf '%s' "${LOG_LEVEL:-info}" | tr '[:upper:]' '[:lower:]')"
+case "$UVICORN_LOG_LEVEL" in
+    critical|error|warning|info|debug|trace) ;;
+    *)
+        log_warn "Invalid LOG_LEVEL '${LOG_LEVEL:-}' supplied; defaulting to 'info'"
+        UVICORN_LOG_LEVEL="info"
+        ;;
+esac
 
 # Determine worker count based on CPU cores
 if [[ -f /proc/cpuinfo ]]; then
@@ -225,5 +233,5 @@ exec env WEBUI_SECRET_KEY="${WEBUI_SECRET_KEY:-}" \
     --host "$HOST" \
     --port "$PORT" \
     --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}" \
-    --log-level "${LOG_LEVEL:-info}" \
+    --log-level "$UVICORN_LOG_LEVEL" \
     "${ARGS[@]}"
