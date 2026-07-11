@@ -11,8 +11,8 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-# Use the standard backend startup script that already handles PORT/health checks safely
-startCommand = "bash /app/backend/start.sh"
+# Use the Railway bootstrap script that restores backups before starting the app
+startCommand = "bash /app/backend/railway-start.sh"
 
 [settings]
 private = false
@@ -43,6 +43,8 @@ PORT = "8080"
 UVICORN_WORKERS = "1"
 LOG_LEVEL = "info"
 ENABLE_BACKUP_RESTORE_ON_STARTUP = "true"
+SUPABASE_BUCKET = "open-connect-backups"
+BACKUP_PREFIX = "backups"
 
 # Data persistence
 [railway.persistentDisk]
