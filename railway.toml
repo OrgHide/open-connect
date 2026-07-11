@@ -21,9 +21,9 @@ private = false
 [railway.healthcheck]
 enabled = true
 path = "/ready"
-interval = 30
-timeout = 10
-retries = 5
+interval = 120
+timeout = 20
+retries = 20
 
 # Resource configuration for stability
 [railway.resources]
