@@ -183,7 +183,7 @@ if ! tar -tzf "${BACKUP_FILE}" > /dev/null 2>&1; then
 fi
 log_success "Backup file integrity verified"
 
-# ── Create temporary extraction directory ──────────────────────────────────────
+# ── Create temporary extraction directory ───────────────────────────────────────
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf ${TEMP_DIR}" EXIT
 
@@ -223,7 +223,7 @@ echo "Backup size: ${BACKUP_SIZE}"
 echo "Extracted to: ${BACKUP_PATH}"
 echo ""
 
-# ── List restoreable items ─────────────────────────────────────────────────────
+# ── List restoreable items ───────────────────────────────────────────────────────
 echo "Items to restore:"
 echo "-----------------"
 
@@ -265,7 +265,7 @@ if [ "$SKIP_PROMPT" != true ]; then
     fi
 fi
 
-# ── Backup current data before restore ─────────────────────────────────────────
+# ── Backup current data before restore ──────────────────────────────────────────
 if [ "$BACKUP_BEFORE_RESTORE" = true ]; then
     log "Creating backup of current data before restore..."
     
@@ -404,6 +404,18 @@ fi
 echo "8. Restoring memories and notes..."
 [ -d "${BACKUP_PATH}/memories" ] && cp -r "${BACKUP_PATH}/memories" "${DATA_DIR}/" 2>/dev/null || true
 [ -d "${BACKUP_PATH}/notes" ] && cp -r "${BACKUP_PATH}/notes" "${DATA_DIR}/" 2>/dev/null || true
+
+# Restore 9: Workspace resources
+echo "9. Restoring workspace resources..."
+mkdir -p "${BACKEND_DIR}/open_webui"
+[ -d "${BACKUP_PATH}/workspace_resources/plugins" ] && cp -r "${BACKUP_PATH}/workspace_resources/plugins" "${BACKEND_DIR}/open_webui/" 2>/dev/null || true
+[ -d "${BACKUP_PATH}/workspace_resources/skills" ] && cp -r "${BACKUP_PATH}/workspace_resources/skills" "${BACKEND_DIR}/open_webui/" 2>/dev/null || true
+[ -d "${BACKUP_PATH}/workspace_resources/pipelines" ] && cp -r "${BACKUP_PATH}/workspace_resources/pipelines" "${BACKEND_DIR}/open_webui/" 2>/dev/null || true
+if [ -d "${BACKUP_PATH}/workspace_resources/integrations" ]; then
+    mkdir -p "${BACKEND_DIR}/open_webui/integrations"
+    [ -f "${BACKUP_PATH}/workspace_resources/integrations/.agents.json" ] && cp "${BACKUP_PATH}/workspace_resources/integrations/.agents.json" "${BACKEND_DIR}/open_webui/integrations/.agents.json" 2>/dev/null || true
+    [ -f "${BACKUP_PATH}/workspace_resources/integrations/.connectors.json" ] && cp "${BACKUP_PATH}/workspace_resources/integrations/.connectors.json" "${BACKEND_DIR}/open_webui/integrations/.connectors.json" 2>/dev/null || true
+fi
 
 # Verify restore
 echo ""
