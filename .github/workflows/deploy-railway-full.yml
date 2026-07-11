@@ -31,6 +31,14 @@ env:
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
   SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
   SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  WEBUI_SECRET_KEY: ${{ secrets.WEBUI_SECRET_KEY }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
 
 jobs:
   # ============================================================
@@ -176,14 +184,26 @@ jobs:
         run: |
           export PATH="$HOME/.railway/bin:$PATH"
           
-          # Set the new Docker image
+          # Set the new Docker image and runtime configuration
           railway variables set DOCKER_IMAGE="${{ needs.build.outputs.image_tag }}"
           railway variables set BUILD_VERSION="${{ needs.build.outputs.version }}"
           railway variables set GIT_COMMIT="${{ github.sha }}"
           railway variables set DEPLOYMENT_ID="${{ github.run_id }}"
           
-          # Ensure backup restore is enabled
+          # Ensure backup restore and provider settings are aligned
           railway variables set ENABLE_BACKUP_RESTORE_ON_STARTUP="true"
+          railway variables set SUPABASE_BUCKET="open-connect-backups"
+          railway variables set BACKUP_PREFIX="backups"
+          railway variables set SUPABASE_PROJECT_REF="$SUPABASE_PROJECT_REF"
+          railway variables set SUPABASE_ACCESS_TOKEN="$SUPABASE_ACCESS_TOKEN"
+          railway variables set DATABASE_URL="$DATABASE_URL"
+          railway variables set WEBUI_SECRET_KEY="$WEBUI_SECRET_KEY"
+          railway variables set SUPABASE_URL="$SUPABASE_URL"
+          railway variables set SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          railway variables set SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY"
+          railway variables set OPENAI_API_KEY="$OPENAI_API_KEY"
+          railway variables set GROQ_API_KEY="$GROQ_API_KEY"
+          railway variables set HUGGINGFACE_TOKEN="$HUGGINGFACE_TOKEN"
           railway variables set ENV="prod"
           railway variables set DOCKER="true"
           railway variables set UVICORN_WORKERS="1"
