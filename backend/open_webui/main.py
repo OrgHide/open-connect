@@ -331,10 +331,11 @@ async def lifespan(app: FastAPI):
     if SAFE_MODE:
         await Functions.deactivate_all_functions()
 
-    # This should be blocking (sync) so functions are not deactivated on first /get_models calls
-    # when the first user lands on the / route.
+    # Run dependency installation in the background so it doesn't block startup.
+    # Functions/tools may not have their dependencies available on the very first
+    # /get_models call, but this allows the server to become ready much faster.
     log.info('Installing external dependencies of functions and tools...')
-    await install_tool_and_function_dependencies()
+    asyncio.create_task(install_tool_and_function_dependencies())
 
     app.state.redis = get_redis_client(async_mode=True)
 
