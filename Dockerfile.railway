@@ -202,8 +202,8 @@ COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/p
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
 # Copy Ollama from stage 4 (if installed)
-COPY --from=ollama-install /usr/local/bin/ollama /usr/local/bin/ollama 2>/dev/null || true
-COPY --from=ollama-install /usr/local/lib/ollama /usr/local/lib/ollama 2>/dev/null || true
+COPY --from=ollama-install /usr/local/bin/ollama /usr/local/bin/ollama
+COPY --from=ollama-install /usr/local/lib/ollama /usr/local/lib/ollama
 
 # Copy built frontend
 COPY --chown=$UID:$GID --from=build /app/build /app/build
