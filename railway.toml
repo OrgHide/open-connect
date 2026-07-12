@@ -45,6 +45,13 @@ LOG_LEVEL = "info"
 ENABLE_BACKUP_RESTORE_ON_STARTUP = "true"
 SUPABASE_BUCKET = "open-connect-backups"
 BACKUP_PREFIX = "backups"
+OPEN_CONNECT_BASE_URL = "https://open-connect-production.up.railway.app"
+OPEN_CONNECT_API_KEY = ""
+SUPABASE_URL = ""
+SUPABASE_ANON_KEY = ""
+REDIS_URL = ""
+DATABASE_URL = ""
+SUPABASE_SERVICE_ROLE_KEY = ""
 
 # Data persistence
 [railway.persistentDisk]
