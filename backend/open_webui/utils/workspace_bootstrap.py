@@ -215,6 +215,13 @@ async def bootstrap_workspace_resources(poll_interval: int = 10) -> dict[str, in
     tools_synced = await _sync_tools(owner.id)
     functions_synced = await _sync_functions(owner.id)
 
+    log.info(
+        'Workspace bootstrap complete: skills=%s tools=%s functions=%s',
+        skills_synced,
+        tools_synced,
+        functions_synced,
+    )
+
     return {
         'skills_synced': skills_synced,
         'tools_synced': tools_synced,
