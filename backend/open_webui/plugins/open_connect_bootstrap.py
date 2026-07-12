@@ -1,11 +1,11 @@
----
+"""
 id: open_connect_bootstrap
 name: Open Connect Bootstrap Helper
 description: Safe deployment diagnostics for the Open Connect workspace bootstrap.
 category: deployment
 source: local
 version: 1.0.0
----
+"""
 
 from __future__ import annotations
 
