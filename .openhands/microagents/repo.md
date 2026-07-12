@@ -16,14 +16,16 @@ Use this file as the first-stop handoff for future agents working on `OrgHide/op
 - Railway boots through `railway-start.sh`, which restores local/Supabase backups before delegating to `backend/start.sh`.
 - `backend/start.sh` normalizes `LOG_LEVEL` before passing it to Uvicorn so `INFO` does not crash startup.
 - `Dockerfile.railway` now bootstraps integrations from `scripts/integrations/install-integrations.sh` during image build.
-- Startup was previously blocked by `install_tool_and_function_dependencies()` in `backend/open_webui/main.py`; a `backend/sitecustomize.py` shim now backgrounds that call so Railway can reach `/ready` before long dependency/model downloads finish.
-- `backend/sitecustomize.py` now wraps the Open WebUI FastAPI lifespan so `init_integrations()` runs on startup and `bootstrap_workspace_resources()` re-seeds skills, tools, and functions in the background after deploy.
+- Startup was previously blocked by `install_tool_and_function_dependencies()` in `backend/open_webui/main.py`; the current startup hook lives in `backend/open_webui/__init__.py` and wraps the Open WebUI FastAPI lifespan so `init_integrations()` runs on startup and `bootstrap_workspace_resources()` re-seeds skills, tools, and functions in the background after deploy.
+- `backend/open_webui/utils/workspace_bootstrap.py` now reads the bootstrap owner identity from `OPEN_CONNECT_BOOTSTRAP_OWNER_NAME`, `OPEN_CONNECT_BOOTSTRAP_OWNER_EMAIL`, and `OPEN_CONNECT_BOOTSTRAP_OWNER_PASSWORD`, auto-creates or migrates that account when the secret is present, and seeds skills/tools with public-read grants.
 - `backend/open_webui/integrations/agents/framework.py` now loads the repository's `.agents.json` and `.connectors.json` manifests into the runtime agent hub.
+- `backend/open_webui/integrations/agents/pipe.py` had invalid `__AI__` annotations fixed.
 - `.env.example` now documents the Redis Cloud variables (`REDIS_URL`, `WEBSOCKET_REDIS_URL`, and related flags) instead of hardcoding any secret values.
+- Bootstrap admin secrets should live in Supabase Vault or Railway secrets, not in git.
 - Backup/restore scripts include workspace resources in addition to the database and user data.
 - The canonical backup target remains Supabase Storage bucket `open-connect-backups` with `backups/` prefix.
 - Release notes use semantic versioning in `CHANGELOG.md`.
-- Railway deployment `68094d02-6a30-4eed-a410-0f0121b20025` succeeded with the startup-relaxation fix.
+- Railway deployment `8cfeed48-50cc-4676-98de-70688a12500c` succeeded after the bootstrap owner/public-read fixes; logs show `Workspace bootstrap complete: skills=4 tools=0 functions=1`.
 
 ## What future agents should check first
 
