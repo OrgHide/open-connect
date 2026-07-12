@@ -85,6 +85,11 @@ If you are trying to understand the full setup quickly, use the deployment map f
 - how the startup bootstrap avoids resetting the workspace on every deploy
 - which workflow is the automation entrypoint
 
+Related docs:
+- [docs/deployment-map.md](./docs/deployment-map.md)
+- [docs/supabase-auth.md](./docs/supabase-auth.md)
+- [docs/canonical-workflow.md](./docs/canonical-workflow.md)
+
 ## Documentation
 
 For more information, check out the [Open WebUI Documentation](https://docs.openwebui.com/).
