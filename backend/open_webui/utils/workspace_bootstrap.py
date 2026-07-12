@@ -20,7 +20,27 @@ PUBLIC_READ_GRANT = {'principal_type': 'user', 'principal_id': '*', 'permission'
 
 
 async def _wait_for_workspace_owner(poll_interval: int = 10) -> Any:
-    """Wait until at least one user exists so seeded records can be owned."""
+    """Return an existing workspace owner or create a bootstrap admin user."""
+    try:
+        owner = await Users.get_first_user()
+        if owner:
+            return owner
+    except Exception as exc:
+        log.debug('Workspace bootstrap is waiting for the first user: %s', exc)
+
+    log.info('No workspace user found; creating a bootstrap owner for workspace seeding...')
+    try:
+        bootstrap_owner = await Users.insert_new_user(
+            id='open-connect-bootstrap',
+            name='Open Connect',
+            email='open-connect-bootstrap@open-connect.local',
+            role='admin',
+        )
+        if bootstrap_owner:
+            return bootstrap_owner
+    except Exception as exc:
+        log.warning('Failed to create bootstrap owner: %s', exc)
+
     while True:
         try:
             owner = await Users.get_first_user()
