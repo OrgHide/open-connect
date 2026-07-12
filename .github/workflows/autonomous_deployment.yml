@@ -1,0 +1,105 @@
+name: Autonomous Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: autonomous-deployment
+  cancel-in-progress: true
+
+env:
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  OPEN_CONNECT_BASE_URL: ${{ vars.OPEN_CONNECT_BASE_URL }}
+  OPEN_CONNECT_API_KEY: ${{ secrets.OPEN_CONNECT_API_KEY }}
+  REDIS_URL: ${{ secrets.REDIS_URL }}
+
+jobs:
+  bootstrap-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.app/install.sh | sh
+
+      - name: Make bootstrap script executable
+        run: chmod +x scripts/bootstrap_supabase.sh
+
+      - name: Bootstrap Supabase project
+        run: ./scripts/bootstrap_supabase.sh
+
+      - name: Login to Railway
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          echo "$RAILWAY_TOKEN" | railway login --token
+
+      - name: Sync Railway variables
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+
+          if [[ -n "${OPEN_CONNECT_BASE_URL:-}" ]]; then
+            railway variables set OPEN_CONNECT_BASE_URL="$OPEN_CONNECT_BASE_URL"
+          fi
+
+          if [[ -n "${OPEN_CONNECT_API_KEY:-}" ]]; then
+            railway variables set OPEN_CONNECT_API_KEY="$OPEN_CONNECT_API_KEY"
+          fi
+
+          if [[ -n "${SUPABASE_URL:-}" ]]; then
+            railway variables set SUPABASE_URL="$SUPABASE_URL"
+          fi
+
+          if [[ -n "${SUPABASE_ANON_KEY:-}" ]]; then
+            railway variables set SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          fi
+
+          if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+            railway variables set SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY"
+          fi
+
+          if [[ -n "${DATABASE_URL:-}" ]]; then
+            railway variables set DATABASE_URL="$DATABASE_URL"
+          fi
+
+          if [[ -n "${REDIS_URL:-}" ]]; then
+            railway variables set REDIS_URL="$REDIS_URL"
+          fi
+
+      - name: Redeploy Railway service
+        run: |
+          export PATH="$HOME/.railway/bin:$PATH"
+          railway up --service open-connect --detach
+          railway status || true
+
+      - name: Smoke test health endpoint
+        run: |
+          APP_URL="${OPEN_CONNECT_BASE_URL:-https://open-connect-production.up.railway.app}"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS "$APP_URL/health" >/dev/null; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Health check did not become ready in time" >&2
+          exit 1
