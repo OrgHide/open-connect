@@ -70,9 +70,20 @@ Visit **https://open-connect-production.up.railway.app** to use the live deploym
 
 The application is deployed on Railway with automatic health checks and scaling.
 
+For the canonical setup map and where each piece lives, see [docs/deployment-map.md](./docs/deployment-map.md).
+
 ## Configuration
 
 See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for detailed configuration instructions.
+
+## Human-friendly deployment reference
+
+If you are trying to understand the full setup quickly, use the deployment map first. It explains:
+
+- which file is the source of truth for runtime behavior
+- where secrets belong
+- how the startup bootstrap avoids resetting the workspace on every deploy
+- which workflow is the automation entrypoint
 
 ## Documentation
 
