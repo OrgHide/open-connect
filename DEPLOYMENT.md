@@ -2,6 +2,8 @@
 
 ## Overview
 
+> Canonical setup note: see [docs/deployment-map.md](./docs/deployment-map.md) for the current source of truth. This guide is historical context for the older Railway deployment flows.
+
 This guide covers the complete deployment of Open Connect to Railway with:
 - **Automatic backups** before every deployment
 - **Data persistence** across deployments
