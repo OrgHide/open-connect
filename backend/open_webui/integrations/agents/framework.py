@@ -66,7 +66,7 @@ class BaseAgent(ABC):
 
 
 class ManifestAgent(BaseAgent):
-    """Fallback agent that stores manifest metadata when no runtime connector exists."
+    """Fallback agent that stores manifest metadata when no runtime connector exists."""
 
     async def run(self, task: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
         return {
