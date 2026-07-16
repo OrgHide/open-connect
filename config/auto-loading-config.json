@@ -1,0 +1,192 @@
+{
+  "version": "2.0",
+  "description": "Auto-loading configuration for Open-Connect resources",
+  "generated_at": "2026-07-16T21:38:36.377Z",
+  "environment": "production",
+  "auto_loading": {
+    "enabled": true,
+    "schedule": "0 1 * * *",
+    "sources": [
+      {
+        "name": "openrouter",
+        "type": "models",
+        "url": "https://openrouter.ai/api/v1/models",
+        "enabled": true,
+        "filters": {
+          "free_only": true,
+          "providers": [
+            "openai",
+            "anthropic",
+            "google",
+            "meta",
+            "mistral",
+            "groq"
+          ]
+        },
+        "rate_limit": 60,
+        "timeout": 30
+      },
+      {
+        "name": "skillsllm",
+        "type": "skills",
+        "url": "https://skillsllm.com/api/skills",
+        "enabled": true,
+        "categories": [
+          "coding",
+          "research",
+          "analysis",
+          "tools"
+        ],
+        "rate_limit": 60,
+        "timeout": 30
+      },
+      {
+        "name": "clawhub",
+        "type": "skills",
+        "url": "https://clawhub.ai/skills/api/list",
+        "enabled": true,
+        "categories": [
+          "ai",
+          "automation",
+          "development",
+          "devops"
+        ],
+        "rate_limit": 60,
+        "timeout": 30
+      },
+      {
+        "name": "supabase",
+        "type": "credentials",
+        "url": "https://rxpkxtzzkvwgjtbtcctc.supabase.co/rest/v1/one_plane_credentials",
+        "enabled": true,
+        "rate_limit": 60,
+        "timeout": 30
+      }
+    ],
+    "loading_strategy": {
+      "parallel": true,
+      "max_concurrent": 5,
+      "retry_attempts": 3,
+      "retry_delay": 5
+    },
+    "caching": {
+      "enabled": true,
+      "ttl": 3600,
+      "directory": "config/auto-loaded",
+      "compress": true
+    }
+  },
+  "resource_types": {
+    "models": {
+      "description": "AI models from various providers",
+      "storage": {
+        "table": "system_models",
+        "primary_key": "id"
+      },
+      "auto_load": true
+    },
+    "skills": {
+      "description": "Skills from marketplaces",
+      "storage": {
+        "table": "system_skills",
+        "primary_key": "id"
+      },
+      "auto_load": true
+    },
+    "agents": {
+      "description": "AI agents and configurations",
+      "storage": {
+        "table": "system_agents",
+        "primary_key": "id"
+      },
+      "auto_load": true
+    },
+    "credentials": {
+      "description": "Secure credentials from Supabase Vault",
+      "storage": {
+        "table": "one_plane_credentials",
+        "primary_key": "one_plane_id"
+      },
+      "auto_load": true,
+      "encrypted": true
+    }
+  },
+  "default_resources": {
+    "models": [
+      {
+        "id": "google/gemini-2.0-flash-exp:free",
+        "name": "Gemini 2.0 Flash",
+        "provider": "google",
+        "enabled": true
+      },
+      {
+        "id": "mistralai/mistral-7b-instruct:free",
+        "name": "Mistral 7B Instruct",
+        "provider": "mistral",
+        "enabled": true
+      },
+      {
+        "id": "groq/llama3-8b-8192",
+        "name": "Llama 3 8B",
+        "provider": "groq",
+        "enabled": true
+      }
+    ],
+    "skills": [
+      {
+        "id": "web_search",
+        "name": "Web Search",
+        "category": "search",
+        "source": "default",
+        "enabled": true
+      },
+      {
+        "id": "code_execution",
+        "name": "Code Execution",
+        "category": "execution",
+        "source": "default",
+        "enabled": true
+      },
+      {
+        "id": "file_operations",
+        "name": "File Operations",
+        "category": "file",
+        "source": "default",
+        "enabled": true
+      }
+    ],
+    "agents": [
+      {
+        "id": "orchestrator",
+        "name": "Orchestrator",
+        "type": "orchestration",
+        "model": "google/gemini-2.0-flash-exp:free",
+        "enabled": true
+      },
+      {
+        "id": "researcher",
+        "name": "Researcher",
+        "type": "research",
+        "model": "google/gemini-2.0-flash-exp:free",
+        "enabled": true
+      },
+      {
+        "id": "coder",
+        "name": "Coder",
+        "type": "coding",
+        "model": "groq/llama3-8b-8192",
+        "enabled": true
+      }
+    ]
+  },
+  "security": {
+    "encryption": {
+      "enabled": true,
+      "algorithm": "AES-256-CBC"
+    },
+    "access_control": {
+      "enabled": true,
+      "default_permissions": "read"
+    }
+  }
+}
