@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  xstack-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xstack-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://xstack:xstack@postgres:5432/xstack
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - xstack-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: xstack-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=xstack
+      - POSTGRES_PASSWORD=xstack
+      - POSTGRES_DB=xstack
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - xstack-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: xstack-redis
+    restart: unless-stopped
+    command: redis-server --requirepass xstack
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - xstack-network
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  xstack-network:
+    driver: bridge
