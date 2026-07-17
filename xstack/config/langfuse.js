@@ -1,1 +1,2 @@
-export const test = "hello";
+/**
+ * XStack Langfuse Configuration
