@@ -31,7 +31,7 @@ export const CHAT_COMMANDS = {
     target: '/xstack/marketplace',
     category: 'marketplace'
   },
-  '/open_secret': {
+  '/open_secrets': {
     name: 'Open Secrets',
     description: 'Open the Secrets management page',
     action: 'open_page',
@@ -45,7 +45,7 @@ CHAT_COMMANDS['/xstack'] = CHAT_COMMANDS['/open_xstack'];
 CHAT_COMMANDS['/resources'] = CHAT_COMMANDS['/open_resources'];
 CHAT_COMMANDS['/connections'] = CHAT_COMMANDS['/open_connections'];
 CHAT_COMMANDS['/marketplace'] = CHAT_COMMANDS['/open_marketplace'];
-CHAT_COMMANDS['/secrets'] = CHAT_COMMANDS['/open_secret'];
+CHAT_COMMANDS['/secrets'] = CHAT_COMMANDS['/open_secrets'];
 
 export function getCommand(commandName) {
   return CHAT_COMMANDS[commandName.toLowerCase()] || null;
