@@ -1,61 +1,77 @@
 version: '3.8'
 
 services:
-  xstack-gateway:
+  xstack:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: xstack-gateway
+      dockerfile: Dockerfile.railway
+    container_name: open-connect-xstack
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://xstack:xstack@postgres:5432/xstack
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET}
+      - BASE_URL=http://localhost:3000
+      - MCP_GATEWAY=mcp://gateway
+      - JWT_SECRET=${JWT_SECRET:-xstack-secret-key}
+      - SESSION_SECRET=${SESSION_SECRET:-xstack-session-secret}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=xstack
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - xstack-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   postgres:
     image: postgres:15-alpine
-    container_name: xstack-postgres
+    container_name: open-connect-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=xstack
-      - POSTGRES_PASSWORD=xstack
       - POSTGRES_DB=xstack
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
     networks:
       - xstack-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: xstack-redis
+    container_name: open-connect-redis
     restart: unless-stopped
-    command: redis-server --requirepass xstack
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:}
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
-    volumes:
-      - redis-data:/data
     networks:
       - xstack-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  postgres-data:
-  redis-data:
+  postgres_data:
+  redis_data:
 
 networks:
   xstack-network:
