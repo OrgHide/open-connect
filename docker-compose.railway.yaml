@@ -1,3 +1,11 @@
+# =============================================================================
+# Open Connect - Railway Deployment (Single Service)
+# =============================================================================
+# Professional single-service deployment for Railway
+# Uses Supabase Vaults for all secrets and authentication
+# Built-in features: Computer, Terminal, Browser from Open WebUI
+# =============================================================================
+
 version: '3.8'
 
 services:
@@ -16,27 +24,28 @@ services:
       - ENV=prod
       - DOCKER=true
       - PORT=8080
-      - OLLAMA_BASE_URL=http://ollama:11434
-    networks:
-      - railway-network
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_ORIGINS=*
-    networks:
-      - railway-network
-
-networks:
-  railway-network:
-    driver: bridge
+      - UVICORN_WORKERS=1
+      - LOG_LEVEL=info
+      - ENABLE_BACKUP_RESTORE_ON_STARTUP=true
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET:-open-connect-backups}
+      - BACKUP_PREFIX=${BACKUP_PREFIX:-backups}
+      - OPEN_CONNECT_BASE_URL=${OPEN_CONNECT_BASE_URL:-https://open-connect-production.up.railway.app}
+      - OPEN_CONNECT_API_KEY=${OPEN_CONNECT_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
-  ollama-models:
+  open-connect-data:
+    driver: local
+  open-connect-backups:
     driver: local
