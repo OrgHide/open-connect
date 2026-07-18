@@ -1,0 +1,12 @@
+{
+  "gateway_config": {
+    "database_adapter": "supabase",
+    "secret_broker": "supabase",
+    "observability": "langfuse",
+    "auth": "supabase",
+    "connections": [
+      { "name": "open-connect-production", "url": "https://open-connect-production.up.railway.app" }
+    ],
+    "default_model_provider": "openrouter"
+  }
+}
