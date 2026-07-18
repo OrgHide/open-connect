@@ -85,13 +85,13 @@ jobs:
             railway variables set REDIS_URL="$REDIS_URL"
           fi
 
-      -name: Redeploy Railway service
+      - name: Redeploy Railway service
         run: |
           export PATH="$HOME/.railway/bin:$PATH"
           railway up --service open-connect --detach
           railway status || true
 
-      -name: Smoke test health endpoint
+      - name: Smoke test health endpoint
         run: |
           APP_URL="${OPEN_CONNECT_BASE_URL:-https://open-connect-production.up.railway.app}"
           for attempt in {1..20}; do
