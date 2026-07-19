@@ -106,7 +106,7 @@ jobs:
           echo "✅ Backup completed: ${BACKUP_NAME}.tar.gz (${BACKUP_SIZE})"
 
       - name: Upload backup to Supabase Storage
-        if: env.SUPABASE_PROJECT_REF != ''
+        if: secrets.SUPABASE_PROJECT_REF != ''
         run: |
           # Create backup metadata
           BACKUP_DATE=$(date +%Y%m%d)
@@ -139,7 +139,7 @@ jobs:
     name: Supabase Database Backup
     runs-on: ubuntu-latest
     needs: backup
-    if: env.SUPABASE_PROJECT_REF != ''
+    if: secrets.SUPABASE_PROJECT_REF != ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
