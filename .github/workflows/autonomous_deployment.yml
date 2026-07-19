@@ -99,7 +99,7 @@ jobs:
           
           # Deploy using explicit clean and sanitized arguments to prevent CLI mapping issues
           railway up --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" --detach
-          railway status --project "$PROJ_ID" || true
+          
 
       - name: Smoke test health endpoint
         run: |
