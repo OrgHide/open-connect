@@ -18,6 +18,7 @@ env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }} # Essential for account-level tokens
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   OPEN_CONNECT_BASE_URL: ${{ vars.OPEN_CONNECT_BASE_URL }}
   OPEN_CONNECT_API_KEY: ${{ secrets.OPEN_CONNECT_API_KEY }}
@@ -52,6 +53,7 @@ jobs:
 
       - name: Sync Railway variables
         run: |
+          # The Railway CLI uses RAILWAY_API_TOKEN automatically
           if [[ -n "${OPEN_CONNECT_BASE_URL:-}" ]]; then
             railway variables set --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" OPEN_CONNECT_BASE_URL="$OPEN_CONNECT_BASE_URL"
           fi
