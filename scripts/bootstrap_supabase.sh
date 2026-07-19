@@ -33,7 +33,6 @@ if [[ ! -f supabase/config.toml ]]; then
 fi
 
 cat > supabase/migrations/20260712_autonomous_bootstrap.sql <<'SQL'
-create extension if not exists vault;
 
 create table if not exists public.agent_vault (
   id uuid primary key default gen_random_uuid(),
