@@ -19,7 +19,7 @@ services:
       - "${PORT:-8080}:8080"
     volumes:
       - open-connect-data:/app/backend/data
-      - open-connect-backups://app/backend/backups
+      - open-connect-backups:/app/backend/backups
       - computer-workspace:/workspace
       - terminal-workspace:/home/user
     environment:
