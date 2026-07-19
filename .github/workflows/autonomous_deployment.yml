@@ -52,12 +52,12 @@ jobs:
 
       - name: Sync Railway variables
         run: |
-          # Sanitize all inputs by removing carriage returns and trimming whitespace
+          # Sanitize the project ID (removing carriage returns and whitespace)
           PROJ_ID=$(echo "${RAILWAY_PROJECT_ID}" | tr -d '\r' | xargs)
-          ENV_NAME=$(echo "${RAILWAY_ENVIRONMENT_ID}" | tr -d '\r' | xargs)
-          ENV_NAME="${ENV_NAME:-production}"
-          SVC_NAME=$(echo "${RAILWAY_SERVICE_ID}" | tr -d '\r' | xargs)
-          SVC_NAME="${SVC_NAME:-open-connect}"
+          
+          # The Railway CLI requires explicit environment and service NAMES, not UUIDs
+          ENV_NAME="production"
+          SVC_NAME="open-connect"
 
           echo "Syncing variables for Project: $PROJ_ID, Environment: $ENV_NAME, Service: $SVC_NAME"
 
@@ -88,20 +88,16 @@ jobs:
 
       - name: Redeploy Railway service
         run: |
-          # Sanitize all inputs by removing carriage returns and trimming whitespace
+          # Sanitize the project ID (removing carriage returns and whitespace)
           PROJ_ID=$(echo "${RAILWAY_PROJECT_ID}" | tr -d '\r' | xargs)
-          ENV_NAME=$(echo "${RAILWAY_ENVIRONMENT_ID}" | tr -d '\r' | xargs)
-          ENV_NAME="${ENV_NAME:-production}"
-          SVC_NAME=$(echo "${RAILWAY_SERVICE_ID}" | tr -d '\r' | xargs)
-          SVC_NAME="${SVC_NAME:-open-connect}"
+          
+          # The Railway CLI requires explicit environment and service NAMES, not UUIDs
+          ENV_NAME="production"
+          SVC_NAME="open-connect"
 
           echo "Redeploying service for Project: $PROJ_ID, Environment: $ENV_NAME, Service: $SVC_NAME"
           
-          # Run link and service link to create local .railway config to prevent CLI argument mapping issues
-          railway link --project "$PROJ_ID" || true
-          railway service link --service "$SVC_NAME" || true
-          
-          # Deploy using explicit clean arguments
+          # Deploy using explicit clean arguments to prevent CLI argument mapping issues
           railway up --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" --detach
           railway status --project "$PROJ_ID" || true
 
