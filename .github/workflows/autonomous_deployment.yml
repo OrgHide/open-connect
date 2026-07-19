@@ -52,46 +52,45 @@ jobs:
 
       - name: Sync Railway variables
         run: |
-          # Resolve robust project, environment, and service variables
           PROJ_ID="${RAILWAY_PROJECT_ID}"
-          ENV_ID="${RAILWAY_ENVIRONMENT_ID:-production}"
-          SVC_ID="${RAILWAY_SERVICE_ID:-open-connect}"
+          ENV_NAME="production"
+          SVC_NAME="open-connect"
 
-          echo "Syncing variables for Project: $PROJ_ID, Environment: $ENV_ID, Service: $SVC_ID"
+          echo "Syncing variables for Project: $PROJ_ID, Environment: $ENV_NAME, Service: $SVC_NAME"
 
-          # Sync variables with robust fallbacks
+          # Sync variables with explicit names to prevent CLI mapping issues
           if [[ -n "${OPEN_CONNECT_BASE_URL:-}" ]]; then
-            railway variables set --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" OPEN_CONNECT_BASE_URL="$OPEN_CONNECT_BASE_URL"
+            railway variables set --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" OPEN_CONNECT_BASE_URL="$OPEN_CONNECT_BASE_URL"
           fi
 
           if [[ -n "${OPEN_CONNECT_API_KEY:-}" ]]; then
-            railway variables set --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" OPEN_CONNECT_API_KEY="$OPEN_CONNECT_API_KEY"
+            railway variables set --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" OPEN_CONNECT_API_KEY="$OPEN_CONNECT_API_KEY"
           fi
 
           if [[ -n "${SUPABASE_URL:-}" ]]; then
-            railway variables set --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" SUPABASE_URL="$SUPABASE_URL"
+            railway variables set --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" SUPABASE_URL="$SUPABASE_URL"
           fi
 
           if [[ -n "${SUPABASE_ANON_KEY:-}" ]]; then
-            railway variables set --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+            railway variables set --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
           fi
 
           if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-            railway variables set --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY"
+            railway variables set --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY"
           fi
 
           if [[ -n "${DATABASE_URL:-}" ]]; then
-            railway variables set --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" DATABASE_URL="$DATABASE_URL"
+            railway variables set --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" DATABASE_URL="$DATABASE_URL"
           fi
 
       - name: Redeploy Railway service
         run: |
           PROJ_ID="${RAILWAY_PROJECT_ID}"
-          ENV_ID="${RAILWAY_ENVIRONMENT_ID:-production}"
-          SVC_ID="${RAILWAY_SERVICE_ID:-open-connect}"
+          ENV_NAME="production"
+          SVC_NAME="open-connect"
 
-          echo "Redeploying service for Project: $PROJ_ID, Environment: $ENV_ID, Service: $SVC_ID"
-          railway up --project "$PROJ_ID" --environment "$ENV_ID" --service "$SVC_ID" --detach
+          echo "Redeploying service for Project: $PROJ_ID, Environment: $ENV_NAME, Service: $SVC_NAME"
+          railway up --project "$PROJ_ID" --environment "$ENV_NAME" --service "$SVC_NAME" --detach
           railway status --project "$PROJ_ID" || true
 
       - name: Smoke test health endpoint
